@@ -153,6 +153,33 @@ def load(config: configparser.RawConfigParser | None = None) -> configparser.Raw
     state.begin_show_push = opts(rc('推送配置', '开播推送开启(是/否)', "是"), True)
     state.over_show_push = opts(rc('推送配置', '关播推送开启(是/否)', "否"), False)
 
+    # ---- 监控时间窗口 ----
+    state.time_window_enabled = opts(rc('录制设置', '监控时间窗口开启(是/否)', "否"), False)
+    state.time_window_start = rc('录制设置', '监控开始时间(时分)', "00:00")
+    state.time_window_end = rc('录制设置', '监控结束时间(时分)', "23:59")
+    state.time_window_cycle = rc('录制设置', '监控重复周期(每天/每周/每月/自定义)', "每天")
+    _weekdays_str = rc('录制设置', '监控生效星期(1-7逗号分隔)', "1,2,3,4,5,6,7")
+    _monthdays_str = rc('录制设置', '监控生效日期(1-31逗号分隔)',
+                        "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31")
+    from .time_window import parse_int_list, validate_config, TimeWindowConfig
+    state.time_window_weekdays = parse_int_list(_weekdays_str, 1, 7)
+    state.time_window_monthdays = parse_int_list(_monthdays_str, 1, 31)
+
+    if state.time_window_enabled:
+        _tw_cfg = TimeWindowConfig(
+            enabled=True,
+            start_time=state.time_window_start,
+            end_time=state.time_window_end,
+            repeat_cycle=state.time_window_cycle,
+            weekdays=state.time_window_weekdays,
+            monthdays=state.time_window_monthdays,
+        )
+        _valid, _err = validate_config(_tw_cfg)
+        if not _valid:
+            from src.utils import logger
+            logger.warning(f"监控时间窗口配置无效，已禁用: {_err}")
+            state.time_window_enabled = False
+
     state.sooplive_username = rc('账号密码', 'sooplive账号', '')
     state.sooplive_password = rc('账号密码', 'sooplive密码', '')
     state.flextv_username = rc('账号密码', 'flextv账号', '')

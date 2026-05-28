@@ -128,6 +128,14 @@ push_check_seconds: int = 1800
 begin_show_push: bool = True
 over_show_push: bool = False
 
+# ---- monitoring time window ----
+time_window_enabled: bool = False
+time_window_start: str = "00:00"
+time_window_end: str = "23:59"
+time_window_cycle: str = "每天"
+time_window_weekdays: list[int] = [1, 2, 3, 4, 5, 6, 7]
+time_window_monthdays: list[int] = list(range(1, 32))
+
 # ---- account credentials ----
 sooplive_username: str = ""
 sooplive_password: str = ""

@@ -29,6 +29,26 @@ from .recorder_pipeline import (
     build_ffmpeg_base, build_save_path, record_audio,
     record_flv_direct, record_with_format,
 )
+from .time_window import TimeWindowConfig, is_within_window
+
+
+def _is_monitoring_allowed() -> bool:
+    """检查当前是否在监控时间窗口内。
+
+    窗口外时录制线程的轮询检测会暂停（sleep），
+    但已开始的录制不受影响（由调用方在录制开始前检查）。
+    """
+    if not state.time_window_enabled:
+        return True
+    tw_config = TimeWindowConfig(
+        enabled=True,
+        start_time=state.time_window_start,
+        end_time=state.time_window_end,
+        repeat_cycle=state.time_window_cycle,
+        weekdays=state.time_window_weekdays,
+        monthdays=state.time_window_monthdays,
+    )
+    return is_within_window(tw_config)
 
 
 def _push_status(record_name: str, record_url: str, message_template: str,
@@ -190,6 +210,11 @@ def start_record(url_data: tuple, count_variable: int = -1) -> None:
 
             while True:
                 try:
+                    # 时间窗口检查：窗口外暂停轮询，但不退出线程
+                    if not _is_monitoring_allowed():
+                        time.sleep(30)
+                        continue
+
                     try:
                         platform, port_info, dispatched_new_url = dispatch(
                             record_url, record_quality, monitor_proxy_address,
