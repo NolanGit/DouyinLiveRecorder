@@ -12,6 +12,7 @@ preserved.
 """
 from __future__ import annotations
 
+from functools import lru_cache
 from typing import Callable
 
 from . import platform_handlers_cn as cn
@@ -76,7 +77,17 @@ HANDLERS: list[tuple[str | tuple[str, ...], Handler]] = [
 
 
 def find_handler(record_url: str) -> Handler | None:
-    """Return the first matching handler for ``record_url`` or ``None``."""
+    """Return the first matching handler for ``record_url`` or ``None``.
+
+    性能优化：在线程内重复调用同一 URL 时，结果会被 lru_cache 缓存。
+    同一 URL 的 handler 不会变化，因此缓存安全。
+    """
+    return _find_handler_cached(record_url)
+
+
+@lru_cache(maxsize=1024)
+def _find_handler_cached(record_url: str) -> Handler | None:
+    """实际执行子串匹配，结果按 URL 缓存。"""
     for keys, handler in HANDLERS:
         if isinstance(keys, str):
             if keys in record_url:

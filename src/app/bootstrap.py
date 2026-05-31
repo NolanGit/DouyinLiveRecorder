@@ -22,7 +22,7 @@ from .ffmpeg_runner import check_ffmpeg_existence
 from .file_ops import backup_file_loop
 from .monitor import adjust_max_request, display_info
 from .recorder import start_record
-from .time_window import TimeWindowConfig, is_within_window
+from .time_window import TimeWindowConfig, is_within_window, seconds_until_next_window_open
 from .url_loader import ensure_url_config_ready, parse_url_config
 
 
@@ -96,6 +96,18 @@ def _check_disk_capacity() -> bool:
     return True
 
 
+def _build_time_window_config() -> TimeWindowConfig:
+    """构建当前时间窗口配置对象。"""
+    return TimeWindowConfig(
+        enabled=state.time_window_enabled,
+        start_time=state.time_window_start,
+        end_time=state.time_window_end,
+        repeat_cycle=state.time_window_cycle,
+        weekdays=state.time_window_weekdays,
+        monthdays=state.time_window_monthdays,
+    )
+
+
 def _is_in_monitoring_window() -> bool:
     """检查当前时刻是否在监控时间窗口内。
 
@@ -104,21 +116,30 @@ def _is_in_monitoring_window() -> bool:
     """
     if not state.time_window_enabled:
         return True
-    tw_config = TimeWindowConfig(
-        enabled=True,
-        start_time=state.time_window_start,
-        end_time=state.time_window_end,
-        repeat_cycle=state.time_window_cycle,
-        weekdays=state.time_window_weekdays,
-        monthdays=state.time_window_monthdays,
-    )
-    if is_within_window(tw_config):
+    if is_within_window(_build_time_window_config()):
         return True
     logger.debug(
         f"当前时间不在监控窗口内({state.time_window_start}-{state.time_window_end})，"
         f"暂停新任务启动"
     )
     return False
+
+
+def _sleep_until_window_or_short(short_secs: int = 3) -> None:
+    """根据时间窗口状态决定主循环休眠时长。
+
+    - 窗口内 / 未启用窗口：休眠 ``short_secs`` 秒（保持原有 3 秒轮询节奏）
+    - 窗口外：精确休眠到下一次窗口开启，避免无意义的 IO 操作
+      （为了让磁盘检查/配置重载提前一点完成，最多休眠到窗口前 5 秒）
+    """
+    if not state.time_window_enabled or _is_in_monitoring_window():
+        time.sleep(short_secs)
+        return
+
+    secs = seconds_until_next_window_open(_build_time_window_config())
+    # 提前 5 秒醒来，让 disk_capacity / config 加载在窗口开启前就绪
+    secs = max(short_secs, secs - 5)
+    time.sleep(secs)
 
 
 def _spawn_recorders() -> None:
@@ -152,11 +173,11 @@ def _spawn_recorders() -> None:
             t = threading.Thread(target=start_record, args=args, daemon=True)
             state.create_var[f'thread_{state.monitoring}'] = t
             t.start()
-            state.running_list.append(url_tuple[1])
+            state.running_list.add(url_tuple[1])
             # 启动间隔延迟，避免同一时刻大量并发请求
             time.sleep(state.local_delay_default)
     # 清空待处理列表，标记首次启动已完成
-    state.url_tuples_list = []
+    state.url_tuples_list = set()
     state.first_start = False
 
 
@@ -194,5 +215,5 @@ def run() -> None:
             threading.Thread(target=adjust_max_request, daemon=True).start()
             state.first_run = False
 
-        # 轮询间隔 3 秒，周期性检测配置变更和新增地址
-        time.sleep(3)
+        # 轮询间隔 3 秒（窗口外则精确休眠到下一次窗口开启前 5 秒，避免空转）
+        _sleep_until_window_or_short(3)

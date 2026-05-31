@@ -183,7 +183,9 @@ def record_flv_direct(port_info: dict, full_path: str, anchor_name: str,
         return False
 
     state.recording.add(record_name)
-    state.recording_time_list[record_name] = [datetime.datetime.now(), record_quality_zh]
+    state.recording_time_list[record_name] = [
+        datetime.datetime.now(), record_quality_zh, record_proxy_address,
+    ]
     download_success = direct_download_stream(
         flv_url, save_file_path, record_name, record_url, platform, record_proxy_address,
     )

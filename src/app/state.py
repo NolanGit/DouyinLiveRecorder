@@ -45,8 +45,8 @@ error_window: list = []
 error_window_size: int = 10
 error_threshold: int = 5
 monitoring: int = 0
-running_list: list = []
-url_tuples_list: list = []
+running_list: set = set()  # 已启动录制线程的 URL 集合（O(1) 查找）
+url_tuples_list: set = set()  # 待启动的 (quality, url, name) 三元组集合
 url_comments: list = []
 text_no_repeat_url: list = []
 create_var: dict = {}
@@ -59,6 +59,11 @@ start_display_time = datetime.datetime.now()
 global_proxy: bool = False
 recording_time_list: dict = {}
 ini_URL_content: str = ""
+
+# ---- url_loader 解析缓存 ----
+url_config_mtime: float = 0.0  # 上次解析时 URL_config.ini 的 mtime
+url_config_size: int = -1      # 上次解析时 URL_config.ini 的 size，结合 mtime 判断变化
+url_config_parse_lock = threading.Lock()
 
 options: dict = {"是": True, "否": False}
 
@@ -220,7 +225,7 @@ PLATFORM_HOST = [
 
 OVERSEAS_PLATFORM_HOST = [
     'www.tiktok.com', 'play.sooplive.co.kr', 'm.sooplive.co.kr',
-    'www.sooplive.com', 'm.sooplive.com', 'www.pandalive.co.kr',
+    'www.sooplive.com', 'm.sooplive.com', 'play.sooplive.com', 'www.pandalive.co.kr',
     'www.winktv.co.kr', 'www.flextv.co.kr', 'www.ttinglive.com',
     'www.popkontv.com', 'www.twitch.tv', 'www.liveme.com',
     'www.showroom-live.com', 'chzzk.naver.com', 'm.chzzk.naver.com',

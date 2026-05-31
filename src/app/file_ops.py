@@ -39,48 +39,71 @@ def get_no_proxy_env() -> dict:
 
 
 def update_file(file_path: str, old_str: str, new_str: str, start_str: str | None = None) -> str | None:
-    """Replace ``old_str`` with ``new_str`` in ``file_path`` (in-place, dedup lines)."""
+    """Replace ``old_str`` with ``new_str`` in ``file_path`` (in-place, dedup lines).
+
+    性能优化：
+    - 用 set 做 O(1) 去重判断（替代 ``if x not in list`` 的 O(N)）
+    - 仅当文件内容确实变化时才执行写回
+    """
     if old_str == new_str and start_str is None:
         return old_str
     with state.file_update_lock:
         file_data: list[str] = []
+        seen: set[str] = set()
+        changed = False
         with open(file_path, "r", encoding=state.text_encoding) as f:
             try:
                 for text_line in f:
+                    original_line = text_line
                     if old_str in text_line:
                         text_line = text_line.replace(old_str, new_str)
                         if start_str:
                             text_line = f'{start_str}{text_line}'
-                    if text_line not in file_data:
+                    if text_line != original_line:
+                        changed = True
+                    if text_line not in seen:
+                        seen.add(text_line)
                         file_data.append(text_line)
+                    else:
+                        # 去重发生 → 文件内容确实变化
+                        changed = True
             except RuntimeError as e:
                 logger.error(f"错误信息: {e} 发生错误的行数: {e.__traceback__.tb_lineno}")
                 if state.ini_URL_content:
                     with open(file_path, "w", encoding=state.text_encoding) as f2:
                         f2.write(state.ini_URL_content)
                     return old_str
-        if file_data:
+        # 仅在内容变化时写回，避免无意义的 IO
+        if file_data and changed:
             with open(file_path, "w", encoding=state.text_encoding) as f:
                 f.write(''.join(file_data))
         return new_str
 
 
 def delete_line(file_path: str, del_line: str, delete_all: bool = False) -> None:
-    """Delete first (or all) occurrences of ``del_line`` in ``file_path``."""
+    """Delete first (or all) occurrences of ``del_line`` in ``file_path``.
+
+    性能优化：先收集到 list，命中再写回；未命中则零写入。
+    """
     with state.file_update_lock:
-        with open(file_path, 'r+', encoding=state.text_encoding) as f:
+        with open(file_path, 'r', encoding=state.text_encoding) as f:
             lines = f.readlines()
-            f.seek(0)
-            f.truncate()
-            skip_line = False
-            for txt_line in lines:
-                if del_line in txt_line:
-                    if delete_all or not skip_line:
-                        skip_line = True
-                        continue
-                else:
-                    skip_line = False
-                f.write(txt_line)
+
+        new_lines: list[str] = []
+        skipped = False
+        any_deleted = False
+        for txt_line in lines:
+            if del_line in txt_line and (delete_all or not skipped):
+                skipped = True
+                any_deleted = True
+                continue
+            if del_line not in txt_line:
+                skipped = False
+            new_lines.append(txt_line)
+
+        if any_deleted:
+            with open(file_path, 'w', encoding=state.text_encoding) as f:
+                f.writelines(new_lines)
 
 
 def backup_file(file_path: str, backup_dir_path: str, limit_counts: int = 6) -> None:

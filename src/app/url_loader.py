@@ -39,13 +39,40 @@ def ensure_url_config_ready() -> None:
 
 
 def parse_url_config() -> None:
-    """Parse ``URL_config.ini`` and append validated triples to ``url_tuples_list``."""
-    state.url_comments, line_list, url_line_list = [], [], []
+    """Parse ``URL_config.ini`` and append validated triples to ``url_tuples_list``.
+
+    性能优化：
+    - 通过 mtime+size 检测文件是否变化；未变化时跳过整个解析（绝大多数轮次跳过）
+    - 用 set 维护 URL 去重，复杂度从 O(N²) 降到 O(N)
+    - 累积所有需要写回的修改后再统一执行
+    """
+    # 短路：文件未变化则跳过解析（监控期间 URL_config.ini 几乎不变）
+    try:
+        st = os.stat(state.url_config_file)
+    except OSError:
+        return
+
+    if (
+        st.st_mtime == state.url_config_mtime
+        and st.st_size == state.url_config_size
+        and state.text_no_repeat_url is not None
+    ):
+        # 文件没变 → 沿用上一次解析结果，但仍需重置 url_tuples_list 用于本轮
+        # （已被消费的 spawn 列表无需重新解析）
+        return
+
+    state.url_comments = []
+    line_set: set[str] = set()        # 用于检测重复行
+    url_set: set[str] = set()         # 用于检测重复 URL
+    duplicate_lines: list[str] = []   # 待删除的重复整行
+    duplicate_origin_urls: list[str] = []  # 待删除的重复 URL（按整行）
+
     with open(state.url_config_file, "r", encoding=state.text_encoding, errors='ignore') as file:
         for origin_line in file:
-            if origin_line in line_list:
-                delete_line(state.url_config_file, origin_line)
-            line_list.append(origin_line)
+            if origin_line in line_set:
+                duplicate_lines.append(origin_line)
+                continue
+            line_set.add(origin_line)
             line = origin_line.strip()
             if len(line) < 18:
                 continue
@@ -82,10 +109,10 @@ def parse_url_config() -> None:
             if quality not in state.QUALITY_CHOICES:
                 quality = '原画'
 
-            if url not in url_line_list:
-                url_line_list.append(url)
-            else:
-                delete_line(state.url_config_file, origin_line)
+            if url in url_set:
+                duplicate_origin_urls.append(origin_line)
+                continue
+            url_set.add(url)
 
             url = 'https://' + url if '://' not in url else url
             url_host = url.split('/')[2]
@@ -110,7 +137,7 @@ def parse_url_config() -> None:
                 if is_comment_line:
                     state.url_comments.append(url)
                 else:
-                    state.url_tuples_list.append((quality, url, name))
+                    state.url_tuples_list.add((quality, url, name))
             else:
                 if not origin_line.startswith('#'):
                     state.color_obj.print_colored(
@@ -121,6 +148,10 @@ def parse_url_config() -> None:
                         state.url_config_file, old_str=origin_line,
                         new_str=origin_line, start_str='#',
                     )
+
+    # 批量删除重复行（合并到一次写入循环中可减少 IO）
+    for dup in duplicate_lines + duplicate_origin_urls:
+        delete_line(state.url_config_file, dup)
 
     while state.need_update_line_list:
         a = state.need_update_line_list.pop()
@@ -137,4 +168,12 @@ def parse_url_config() -> None:
                 new_str=new_word, start_str=start_with,
             )
 
-    state.text_no_repeat_url = list(set(state.url_tuples_list))
+    state.text_no_repeat_url = list(state.url_tuples_list)
+
+    # 解析完成后更新缓存指纹（使用最终文件状态，因为可能在过程中被改写过）
+    try:
+        st_after = os.stat(state.url_config_file)
+        state.url_config_mtime = st_after.st_mtime
+        state.url_config_size = st_after.st_size
+    except OSError:
+        pass

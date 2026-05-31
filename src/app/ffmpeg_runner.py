@@ -130,7 +130,12 @@ def check_subprocess(record_name: str, record_url: str, ffmpeg_command: list,
                 process.send_signal(signal.SIGINT)
             process.wait()
             return True
-        time.sleep(1)
+        # 性能优化：用 wait(timeout) 替代 sleep(1) 轮询
+        # 进程退出时立即唤醒；2 秒检查一次注释/退出标记（响应延迟可接受）
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            pass
 
     return_code = process.returncode
     stop_time = time.strftime('%Y-%m-%d %H:%M:%S')

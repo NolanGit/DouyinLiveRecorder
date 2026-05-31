@@ -64,6 +64,18 @@ def _wait_for_next_window() -> None:
     time.sleep(max(1.0, secs))
 
 
+def _proxy_tag(proxy_addr: str | None) -> str:
+    """生成检测/录制时使用的代理状态标签。"""
+    return _PROXY_TAG_CACHE.setdefault(
+        proxy_addr,
+        f"[代理: {proxy_addr}]" if proxy_addr else "[代理: 直连]",
+    )
+
+
+# 缓存代理标签字符串，避免每次循环重复构造（每个 URL 仅 1-2 个唯一 tag）
+_PROXY_TAG_CACHE: dict[str | None, str] = {}
+
+
 def _push_status(record_name: str, record_url: str, message_template: str,
                  fallback: str) -> None:
     """Schedule a non-blocking status push."""
@@ -128,7 +140,9 @@ def _live_started(port_info: dict, platform: str, record_url: str,
     ffmpeg_command = build_ffmpeg_base(real_url, record_url, platform, record_proxy_address)
 
     state.recording.add(record_name)
-    state.recording_time_list[record_name] = [datetime.datetime.now(), record_quality_zh]
+    state.recording_time_list[record_name] = [
+        datetime.datetime.now(), record_quality_zh, record_proxy_address,
+    ]
     if state.show_url:
         special = ('WinkTV', 'PandaTV', 'ShowRoom', 'CHZZK', 'Youtube')
         if platform in special:
@@ -184,8 +198,14 @@ def _live_started(port_info: dict, platform: str, record_url: str,
     return False, finished
 
 
-def _sleep_until_next_check(anchor_name: str, record_finished: bool, count_time: float) -> None:
-    """Wait the configured loop interval, applying error / finish backoff."""
+def _sleep_until_next_check(anchor_name: str, record_finished: bool, count_time: float,
+                            monitor_proxy_address: str | None = None) -> None:
+    """Wait the configured loop interval, applying error / finish backoff.
+
+    性能优化：
+    - 不再每秒 wakeup 仅为打印倒计时，改为「打印一次 + 单次 sleep」
+    - 仅在 ``state.loop_time`` (调试模式) 开启时按 5 秒粒度刷新进度
+    """
     num = max(0, random.randint(-5, 5) + state.delay_default)
     x = num
     if state.error_count > 20:
@@ -197,13 +217,19 @@ def _sleep_until_next_check(anchor_name: str, record_finished: bool, count_time:
         if elapsed < 60:
             x = 30
 
-    while x:
-        x -= 1
-        if state.loop_time:
-            print(f'\r{anchor_name}循环等待{x}秒 ', end="")
-        time.sleep(1)
+    proxy_tag = _proxy_tag(monitor_proxy_address)
     if state.loop_time:
-        print('\r检测直播间中...', end="")
+        # 调试模式：每 5 秒刷新一次倒计时（而非每秒），减少 wakeup
+        remaining = x
+        while remaining > 0:
+            print(f'\r{anchor_name}{proxy_tag}循环等待{remaining}秒 ', end="")
+            sleep_chunk = min(5, remaining)
+            time.sleep(sleep_chunk)
+            remaining -= sleep_chunk
+        print(f'\r检测直播间中... {proxy_tag}', end="")
+    else:
+        # 默认模式：一次性休眠到下次检测，0 wakeup
+        time.sleep(x)
 
 
 def start_record(url_data: tuple, count_variable: int = -1) -> None:
@@ -266,7 +292,7 @@ def start_record(url_data: tuple, count_variable: int = -1) -> None:
                             run_once = True
 
                         if port_info['is_live'] is False:
-                            print(f"\r{record_name} 等待直播... ")
+                            print(f"\r{record_name} {_proxy_tag(monitor_proxy_address)} 等待直播... ")
                             if start_pushed:
                                 if state.over_show_push:
                                     _push_status(
@@ -303,7 +329,7 @@ def start_record(url_data: tuple, count_variable: int = -1) -> None:
                 except Exception as e:  # noqa: BLE001
                     _record_error(e)
 
-                _sleep_until_next_check(anchor_name, record_finished, count_time)
+                _sleep_until_next_check(anchor_name, record_finished, count_time, monitor_proxy_address)
                 if record_finished:
                     record_finished = False
 
