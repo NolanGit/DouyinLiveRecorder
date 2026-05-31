@@ -291,10 +291,18 @@ async def get_sooplive_stream_data(
             return result
     if json_data['result'] == 1 and anchor_name:
         broad_no = json_data['data']['broad_no']
-        hls_authentication_key = json_data['data']['hls_authentication_key']
+        # 注意：移动端 ``api.m.sooplive.co.kr/broad/a/watch`` 返回的 ``hls_authentication_key``
+        # 是受限的移动端 token，对应的 ``master.m3u8`` 只会返回 hd(540p) 一档清晰度。
+        # 必须改用桌面端 ``player_live_api.php`` 取 aid token，才能在同一个
+        # ``auth_master_playlist.m3u8`` 上拿到完整的 original(1080p)/hd4k/hd/sd 多档清晰度。
+        try:
+            aid_token = await get_sooplive_tk(url, rtype='aid', proxy_addr=proxy_addr, cookies=cookies)
+        except Exception:  # noqa: BLE001
+            # 桌面端 API 失败时降级回移动端 token，至少能拿到 540p 录制。
+            aid_token = json_data['data']['hls_authentication_key']
         view_url_data = await get_sooplive_cdn_url(broad_no, proxy_addr=proxy_addr)
         view_url = view_url_data['view_url']
-        m3u8_url = view_url + '?aid=' + hls_authentication_key
+        m3u8_url = view_url + '?aid=' + aid_token
         result |= {'is_live': True, 'm3u8_url': m3u8_url, 'play_url_list': await get_url_list(m3u8_url)}
     result['new_cookies'] = None
     return result
