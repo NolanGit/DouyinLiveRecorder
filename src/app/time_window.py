@@ -175,3 +175,60 @@ def _is_time_in_range(config: TimeWindowConfig, now: datetime.datetime) -> bool:
     else:
         # 跨天窗口：如 22:00 - 06:00（包含午夜）
         return now_minutes >= start_minutes or now_minutes < end_minutes
+
+
+def seconds_until_next_window_open(config: TimeWindowConfig,
+                                   now: datetime.datetime | None = None) -> float:
+    """计算距离下一次监控窗口开启的秒数。
+
+    Args:
+        config: 时间窗口配置
+        now: 当前时间（默认取系统当前时间）
+
+    Returns:
+        - 若功能未开启或当前已在窗口内：返回 0
+        - 否则返回距离下一次窗口开启的秒数（>= 1）
+
+    实现策略：
+        以日为粒度，从今天起向后枚举最多 366 天，
+        找到第一个"日期匹配周期 + start_time 之后或当天"的时间点。
+    """
+    if not config.enabled:
+        return 0.0
+    if now is None:
+        now = datetime.datetime.now()
+
+    # 已在窗口内 → 立即返回
+    if is_within_window(config, now):
+        return 0.0
+
+    start = parse_time(config.start_time)
+    if start is None:
+        return 0.0  # 配置错误时不延迟
+
+    start_hour, start_minute = start
+    today = now.date()
+
+    # 向后扫描最多 400 天，覆盖每月 31 号、每周等所有边界
+    for offset in range(0, 400):
+        candidate_date = today + datetime.timedelta(days=offset)
+        candidate_dt = datetime.datetime.combine(
+            candidate_date,
+            datetime.time(start_hour, start_minute),
+        )
+
+        # 候选时间必须在 now 之后
+        if candidate_dt <= now:
+            continue
+
+        # 候选日期必须满足重复周期
+        if not _is_date_in_cycle(config, candidate_dt):
+            continue
+
+        # 跨天窗口的特殊情况：start>end 时 candidate_dt 即窗口起点，OK
+        # 同日窗口：直接使用 candidate_dt
+        return (candidate_dt - now).total_seconds()
+
+    # 理论上不会到达，兜底返回一个合理值
+    return 86400.0
+

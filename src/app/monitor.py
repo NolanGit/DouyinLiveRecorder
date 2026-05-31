@@ -11,6 +11,26 @@ from pathlib import Path
 from src.utils import logger
 
 from . import state
+from .time_window import TimeWindowConfig, is_within_window, seconds_until_next_window_open
+
+
+def _build_time_window_config() -> TimeWindowConfig:
+    """构建当前时间窗口配置对象。"""
+    return TimeWindowConfig(
+        enabled=state.time_window_enabled,
+        start_time=state.time_window_start,
+        end_time=state.time_window_end,
+        repeat_cycle=state.time_window_cycle,
+        weekdays=state.time_window_weekdays,
+        monthdays=state.time_window_monthdays,
+    )
+
+
+def _is_in_monitoring_window() -> bool:
+    """检查当前是否在监控时间窗口内。"""
+    if not state.time_window_enabled:
+        return True
+    return is_within_window(_build_time_window_config())
 
 
 def display_info() -> None:
@@ -20,6 +40,14 @@ def display_info() -> None:
         try:
             sys.stdout.flush()
             time.sleep(5)
+
+            # 时间窗口外：精确休眠到下一次窗口开启，避免无意义的 dashboard 刷新
+            if not _is_in_monitoring_window():
+                secs = seconds_until_next_window_open(_build_time_window_config())
+                if secs > 0:
+                    time.sleep(secs)
+                continue
+
             if Path(sys.executable).name != 'pythonw.exe':
                 os.system(state.clear_command)
             print(f"\r共监测{state.monitoring}个直播中", end=" | ")

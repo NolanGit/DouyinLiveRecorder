@@ -201,7 +201,9 @@ async def get_sooplive_stream_data(
     if cookies:
         headers['Cookie'] = cookies
 
-    if "sooplive.com" in url:
+    # 仅 www.sooplive.com（国际版主页/频道页）走 global API；
+    # play.sooplive.com/<bjid>/<broadno> 实际是韩版直播间，应走 co.kr API。
+    if "www.sooplive.com" in url:
         return await _fetch_web_stream_data_global(url, proxy_addr, cookies)
 
     split_url = url.split('/')

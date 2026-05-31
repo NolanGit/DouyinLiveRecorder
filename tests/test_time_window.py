@@ -8,6 +8,7 @@ from src.app.time_window import (
     is_within_window,
     parse_int_list,
     parse_time,
+    seconds_until_next_window_open,
     validate_config,
     _is_date_in_cycle,
     _is_time_in_range,
@@ -273,3 +274,123 @@ class TestBackwardCompatibility:
         """state 中默认值应为 disabled。"""
         from src.app import state
         assert state.time_window_enabled is False
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# seconds_until_next_window_open
+# ──────────────────────────────────────────────────────────────────────────────
+
+class TestSecondsUntilNextWindowOpen:
+    """精确休眠时长计算。"""
+
+    def test_disabled_returns_zero(self):
+        cfg = TimeWindowConfig(enabled=False)
+        assert seconds_until_next_window_open(
+            cfg, datetime.datetime(2025, 6, 1, 3, 0)
+        ) == 0.0
+
+    def test_already_in_window_returns_zero(self):
+        cfg = TimeWindowConfig(
+            enabled=True, start_time="08:00", end_time="22:00",
+        )
+        # 10:00 在窗口内
+        assert seconds_until_next_window_open(
+            cfg, datetime.datetime(2025, 6, 1, 10, 0)
+        ) == 0.0
+
+    def test_same_day_before_window(self):
+        """同日窗口未到：11:00 -> 17:00 = 6 小时 = 21600 秒。"""
+        cfg = TimeWindowConfig(
+            enabled=True, start_time="17:00", end_time="23:00",
+        )
+        secs = seconds_until_next_window_open(
+            cfg, datetime.datetime(2025, 6, 1, 11, 0)
+        )
+        assert secs == 6 * 3600
+
+    def test_same_day_after_window_jumps_to_tomorrow(self):
+        """同日窗口已过：23:30 -> 次日 08:00 = 8.5 小时 = 30600 秒。"""
+        cfg = TimeWindowConfig(
+            enabled=True, start_time="08:00", end_time="22:00",
+        )
+        secs = seconds_until_next_window_open(
+            cfg, datetime.datetime(2025, 6, 1, 23, 30)
+        )
+        assert secs == 8 * 3600 + 30 * 60
+
+    def test_minutes_precision(self):
+        """16:55 -> 17:00 = 5 分钟 = 300 秒（用户的典型场景）。"""
+        cfg = TimeWindowConfig(
+            enabled=True, start_time="17:00", end_time="23:00",
+        )
+        secs = seconds_until_next_window_open(
+            cfg, datetime.datetime(2025, 6, 1, 16, 55)
+        )
+        assert secs == 5 * 60
+
+    def test_weekly_skips_to_next_matching_day(self):
+        """每周模式：周二查询，仅周一/三/五生效，应跳到周三。"""
+        # 2025-06-03 是星期二（不匹配）
+        cfg = TimeWindowConfig(
+            enabled=True, start_time="08:00", end_time="20:00",
+            repeat_cycle="每周", weekdays=[1, 3, 5],
+        )
+        secs = seconds_until_next_window_open(
+            cfg, datetime.datetime(2025, 6, 3, 10, 0)
+        )
+        # 距离 6-04 (周三) 08:00 = 22 小时
+        assert secs == 22 * 3600
+
+    def test_monthly_within_same_month(self):
+        """每月模式：6/10 -> 6/15 (12:00)。"""
+        cfg = TimeWindowConfig(
+            enabled=True, start_time="12:00", end_time="20:00",
+            repeat_cycle="每月", monthdays=[15],
+        )
+        secs = seconds_until_next_window_open(
+            cfg, datetime.datetime(2025, 6, 10, 12, 0)
+        )
+        # 距离 6/15 12:00 = 5 天 = 432000 秒
+        assert secs == 5 * 86400
+
+    def test_monthly_crosses_month(self):
+        """每月模式：当月 day=1 已过，跳到下月 1 号。"""
+        cfg = TimeWindowConfig(
+            enabled=True, start_time="08:00", end_time="20:00",
+            repeat_cycle="每月", monthdays=[1],
+        )
+        # 6/15 12:00 -> 7/1 08:00
+        secs = seconds_until_next_window_open(
+            cfg, datetime.datetime(2025, 6, 15, 12, 0)
+        )
+        # 6/15 12:00 -> 7/1 08:00 = 15 天 20 小时
+        expected = 15 * 86400 + 20 * 3600
+        assert secs == expected
+
+    def test_cross_day_window_already_open(self):
+        """跨天窗口 22:00-06:00，凌晨 3:00 应在窗口内 → 0。"""
+        cfg = TimeWindowConfig(
+            enabled=True, start_time="22:00", end_time="06:00",
+        )
+        assert seconds_until_next_window_open(
+            cfg, datetime.datetime(2025, 6, 1, 3, 0)
+        ) == 0.0
+
+    def test_cross_day_window_during_gap(self):
+        """跨天窗口 22:00-06:00，10:00 -> 当日 22:00 = 12 小时。"""
+        cfg = TimeWindowConfig(
+            enabled=True, start_time="22:00", end_time="06:00",
+        )
+        secs = seconds_until_next_window_open(
+            cfg, datetime.datetime(2025, 6, 1, 10, 0)
+        )
+        assert secs == 12 * 3600
+
+    def test_uses_current_time_when_none(self):
+        """now=None 时使用系统时间（不抛异常）。"""
+        cfg = TimeWindowConfig(
+            enabled=True, start_time="00:00", end_time="23:59",
+        )
+        result = seconds_until_next_window_open(cfg)
+        assert isinstance(result, float)
+        assert result >= 0
