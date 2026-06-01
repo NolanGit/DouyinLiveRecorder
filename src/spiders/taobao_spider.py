@@ -10,6 +10,10 @@ import execjs
 from .base import OptionalStr, trace_error_decorator, async_req, get_params, JS_SCRIPT_PATH, utils
 
 
+# 模块加载时一次性读取并编译 JS，避免循环里每次 sign 时都 open/read/compile
+_TAOBAO_JS = execjs.compile(open(f'{JS_SCRIPT_PATH}/taobao-sign.js').read())
+
+
 @trace_error_decorator
 async def get_taobao_stream_url(url: str, proxy_addr: OptionalStr = None, cookies: OptionalStr = None) -> dict:
     headers = {
@@ -51,7 +55,7 @@ async def get_taobao_stream_url(url: str, proxy_addr: OptionalStr = None, cookie
         _m_h5_tk = re.findall('_m_h5_tk=(.*?);', headers['Cookie'])[0]
         t13 = int(time.time() * 1000)
         pre_sign_str = f'{_m_h5_tk.split("_")[0]}&{t13}&{app_key}&' + params['data']
-        sign = execjs.compile(open(f'{JS_SCRIPT_PATH}/taobao-sign.js').read()).call('sign', pre_sign_str)
+        sign = _TAOBAO_JS.call('sign', pre_sign_str)
         params |= {'sign': sign, 't': t13}
         api = f'https://h5api.m.taobao.com/h5/mtop.mediaplatform.live.livedetail/4.0/?{urllib.parse.urlencode(params)}'
         jsonp_str, new_cookie = await async_req(url=api, proxy_addr=proxy_addr, headers=headers, timeout=20,

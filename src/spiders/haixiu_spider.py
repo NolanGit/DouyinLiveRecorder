@@ -9,6 +9,10 @@ import execjs
 from .base import OptionalStr, trace_error_decorator, async_req, JS_SCRIPT_PATH
 
 
+# 模块加载时一次性读取并编译 JS，避免每次直播探测都重新 open/read/compile
+_HAIXIU_JS = execjs.compile(open(f'{JS_SCRIPT_PATH}/haixiu.js').read())
+
+
 @trace_error_decorator
 async def get_haixiu_stream_url(url: str, proxy_addr: OptionalStr = None, cookies: OptionalStr = None) -> dict:
     headers = {
@@ -31,8 +35,7 @@ async def get_haixiu_stream_url(url: str, proxy_addr: OptionalStr = None, cookie
         "c": "10138100100000",
         "_st1": int(time.time() * 1000)
     }
-    ajax_data = execjs.compile(open(f'{JS_SCRIPT_PATH}/haixiu.js').read()).call('sign', params,
-                                                                                f'{JS_SCRIPT_PATH}/crypto-js.min.js')
+    ajax_data = _HAIXIU_JS.call('sign', params, f'{JS_SCRIPT_PATH}/crypto-js.min.js')
 
     params["accessToken"] = urllib.parse.unquote(urllib.parse.unquote(access_token))
     params['_ajaxData1'] = ajax_data

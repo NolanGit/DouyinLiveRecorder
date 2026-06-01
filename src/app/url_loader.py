@@ -18,19 +18,33 @@ from .naming import contains_url
 
 
 def ensure_url_config_ready() -> None:
-    """Make sure ``config.ini`` and ``URL_config.ini`` exist and have content."""
+    """Make sure ``config.ini`` and ``URL_config.ini`` exist and have content.
+
+    性能优化：监控期间 URL_config.ini 几乎不变。这里通过 mtime/size 与
+    :func:`parse_url_config` 共享的缓存指纹比对，命中时直接复用上次缓存的
+    ``state.ini_URL_content``，跳过 open/read。
+    """
     try:
         if not os.path.isfile(state.config_file):
             with open(state.config_file, 'w', encoding=state.text_encoding):
                 pass
 
-        ini_url_content = ''
-        if os.path.isfile(state.url_config_file):
-            with open(state.url_config_file, 'r', encoding=state.text_encoding) as f:
-                ini_url_content = f.read().strip()
-        state.ini_URL_content = ini_url_content
+        if not os.path.isfile(state.url_config_file):
+            state.ini_URL_content = ''
+        else:
+            st = os.stat(state.url_config_file)
+            # 命中缓存（与 parse_url_config 共享 url_config_mtime / size 指纹）
+            if (
+                st.st_mtime == state.url_config_mtime
+                and st.st_size == state.url_config_size
+                and state.ini_URL_content
+            ):
+                pass  # 复用上次读到的内容
+            else:
+                with open(state.url_config_file, 'r', encoding=state.text_encoding) as f:
+                    state.ini_URL_content = f.read().strip()
 
-        if not ini_url_content.strip():
+        if not state.ini_URL_content.strip():
             input_url = input('请输入要录制的主播直播间网址（尽量使用PC网页端的直播间地址）:\n')
             with open(state.url_config_file, 'w', encoding=state.text_encoding) as f:
                 f.write(input_url)

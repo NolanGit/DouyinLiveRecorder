@@ -65,6 +65,12 @@ url_config_mtime: float = 0.0  # 上次解析时 URL_config.ini 的 mtime
 url_config_size: int = -1      # 上次解析时 URL_config.ini 的 size，结合 mtime 判断变化
 url_config_parse_lock = threading.Lock()
 
+# ---- config.ini 解析缓存 ----
+# 主循环每 3 秒调用 config.load()，旧实现里每个 key 都触发一次 parser.read()
+# 加上 mtime/size 短路后，未变化时所有 read_config_value() 调用共享同一份内存解析结果
+config_ini_mtime: float = 0.0
+config_ini_size: int = -1
+
 options: dict = {"是": True, "否": False}
 
 # ---------- runtime configuration values (populated by config.load()) ----------

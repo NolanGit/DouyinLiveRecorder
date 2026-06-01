@@ -130,22 +130,35 @@ def backup_file(file_path: str, backup_dir_path: str, limit_counts: int = 6) -> 
 
 
 def backup_file_loop() -> None:
-    """Daemon thread loop that backs up config files when they change."""
+    """Daemon thread loop that backs up config files when they change.
+
+    性能优化：先用 mtime 短路，未变化时跳过整个文件 MD5 计算（原实现每
+    10 分钟读一次完整文件做哈希，即使文件没改）。仅在 mtime 变化时再做
+    MD5 二次验证防误报（防止编辑器写入但内容未实际变化）。
+    """
     config_md5 = ''
     url_config_md5 = ''
+    config_mtime = 0.0
+    url_config_mtime = 0.0
     while True:
         try:
             if os.path.exists(state.config_file):
-                new_config_md5 = utils.check_md5(state.config_file)
-                if new_config_md5 != config_md5:
-                    backup_file(state.config_file, state.backup_dir)
-                    config_md5 = new_config_md5
+                cur_mtime = os.path.getmtime(state.config_file)
+                if cur_mtime != config_mtime:
+                    new_config_md5 = utils.check_md5(state.config_file)
+                    if new_config_md5 != config_md5:
+                        backup_file(state.config_file, state.backup_dir)
+                        config_md5 = new_config_md5
+                    config_mtime = cur_mtime
 
             if os.path.exists(state.url_config_file):
-                new_url_config_md5 = utils.check_md5(state.url_config_file)
-                if new_url_config_md5 != url_config_md5:
-                    backup_file(state.url_config_file, state.backup_dir)
-                    url_config_md5 = new_url_config_md5
+                cur_mtime = os.path.getmtime(state.url_config_file)
+                if cur_mtime != url_config_mtime:
+                    new_url_config_md5 = utils.check_md5(state.url_config_file)
+                    if new_url_config_md5 != url_config_md5:
+                        backup_file(state.url_config_file, state.backup_dir)
+                        url_config_md5 = new_url_config_md5
+                    url_config_mtime = cur_mtime
             time.sleep(600)
         except Exception as e:
             logger.error(f"备份配置文件失败, 错误信息: {e}")

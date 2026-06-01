@@ -12,35 +12,42 @@ import asyncio
 from src import spider, stream
 
 from . import state
+from .platform_async import run_async
 
 
 def handle_douyin(record_url, record_quality, monitor_proxy_address):
     with state.semaphore:
-        if 'v.douyin.com' not in record_url and '/user/' not in record_url:
-            json_data = asyncio.run(spider.get_douyin_web_stream_data(
-                url=record_url, proxy_addr=monitor_proxy_address, cookies=state.dy_cookie))
-        else:
-            json_data = asyncio.run(spider.get_douyin_app_stream_data(
-                url=record_url, proxy_addr=monitor_proxy_address, cookies=state.dy_cookie))
-        port_info = asyncio.run(
-            stream.get_douyin_stream_url(json_data, record_quality, monitor_proxy_address))
+        async def _flow():
+            if 'v.douyin.com' not in record_url and '/user/' not in record_url:
+                json_data = await spider.get_douyin_web_stream_data(
+                    url=record_url, proxy_addr=monitor_proxy_address, cookies=state.dy_cookie)
+            else:
+                json_data = await spider.get_douyin_app_stream_data(
+                    url=record_url, proxy_addr=monitor_proxy_address, cookies=state.dy_cookie)
+            return await stream.get_douyin_stream_url(
+                json_data, record_quality, monitor_proxy_address)
+        port_info = run_async(_flow)
     return '抖音直播', port_info, ''
 
 
 def handle_kuaishou(record_url, record_quality, monitor_proxy_address):
     with state.semaphore:
-        json_data = asyncio.run(spider.get_kuaishou_stream_data(
-            url=record_url, proxy_addr=monitor_proxy_address, cookies=state.ks_cookie))
-        port_info = asyncio.run(stream.get_kuaishou_stream_url(json_data, record_quality))
+        async def _flow():
+            json_data = await spider.get_kuaishou_stream_data(
+                url=record_url, proxy_addr=monitor_proxy_address, cookies=state.ks_cookie)
+            return await stream.get_kuaishou_stream_url(json_data, record_quality)
+        port_info = run_async(_flow)
     return '快手直播', port_info, ''
 
 
 def handle_huya(record_url, record_quality, monitor_proxy_address):
     with state.semaphore:
         if record_quality not in ['OD', 'BD', 'UHD']:
-            json_data = asyncio.run(spider.get_huya_stream_data(
-                url=record_url, proxy_addr=monitor_proxy_address, cookies=state.hy_cookie))
-            port_info = asyncio.run(stream.get_huya_stream_url(json_data, record_quality))
+            async def _flow():
+                json_data = await spider.get_huya_stream_data(
+                    url=record_url, proxy_addr=monitor_proxy_address, cookies=state.hy_cookie)
+                return await stream.get_huya_stream_url(json_data, record_quality)
+            port_info = run_async(_flow)
         else:
             port_info = asyncio.run(spider.get_huya_app_stream_url(
                 url=record_url, proxy_addr=monitor_proxy_address, cookies=state.hy_cookie))
@@ -49,29 +56,35 @@ def handle_huya(record_url, record_quality, monitor_proxy_address):
 
 def handle_douyu(record_url, record_quality, monitor_proxy_address):
     with state.semaphore:
-        json_data = asyncio.run(spider.get_douyu_info_data(
-            url=record_url, proxy_addr=monitor_proxy_address, cookies=state.douyu_cookie))
-        port_info = asyncio.run(stream.get_douyu_stream_url(
-            json_data, video_quality=record_quality, cookies=state.douyu_cookie,
-            proxy_addr=monitor_proxy_address))
+        async def _flow():
+            json_data = await spider.get_douyu_info_data(
+                url=record_url, proxy_addr=monitor_proxy_address, cookies=state.douyu_cookie)
+            return await stream.get_douyu_stream_url(
+                json_data, video_quality=record_quality, cookies=state.douyu_cookie,
+                proxy_addr=monitor_proxy_address)
+        port_info = run_async(_flow)
     return '斗鱼直播', port_info, ''
 
 
 def handle_yy(record_url, record_quality, monitor_proxy_address):
     with state.semaphore:
-        json_data = asyncio.run(spider.get_yy_stream_data(
-            url=record_url, proxy_addr=monitor_proxy_address, cookies=state.yy_cookie))
-        port_info = asyncio.run(stream.get_yy_stream_url(json_data))
+        async def _flow():
+            json_data = await spider.get_yy_stream_data(
+                url=record_url, proxy_addr=monitor_proxy_address, cookies=state.yy_cookie)
+            return await stream.get_yy_stream_url(json_data)
+        port_info = run_async(_flow)
     return 'YY直播', port_info, ''
 
 
 def handle_bilibili(record_url, record_quality, monitor_proxy_address):
     with state.semaphore:
-        json_data = asyncio.run(spider.get_bilibili_room_info(
-            url=record_url, proxy_addr=monitor_proxy_address, cookies=state.bili_cookie))
-        port_info = asyncio.run(stream.get_bilibili_stream_url(
-            json_data, video_quality=record_quality, cookies=state.bili_cookie,
-            proxy_addr=monitor_proxy_address))
+        async def _flow():
+            json_data = await spider.get_bilibili_room_info(
+                url=record_url, proxy_addr=monitor_proxy_address, cookies=state.bili_cookie)
+            return await stream.get_bilibili_stream_url(
+                json_data, video_quality=record_quality, cookies=state.bili_cookie,
+                proxy_addr=monitor_proxy_address)
+        port_info = run_async(_flow)
     return 'B站直播', port_info, ''
 
 
@@ -98,9 +111,11 @@ def handle_blued(record_url, record_quality, monitor_proxy_address):
 
 def handle_netease(record_url, record_quality, monitor_proxy_address):
     with state.semaphore:
-        json_data = asyncio.run(spider.get_netease_stream_data(
-            url=record_url, cookies=state.netease_cookie))
-        port_info = asyncio.run(stream.get_netease_stream_url(json_data, record_quality))
+        async def _flow():
+            json_data = await spider.get_netease_stream_data(
+                url=record_url, cookies=state.netease_cookie)
+            return await stream.get_netease_stream_url(json_data, record_quality)
+        port_info = run_async(_flow)
     return '网易CC直播', port_info, ''
 
 
@@ -127,18 +142,22 @@ def handle_look(record_url, record_quality, monitor_proxy_address):
 
 def handle_baidu(record_url, record_quality, monitor_proxy_address):
     with state.semaphore:
-        json_data = asyncio.run(spider.get_baidu_stream_data(
-            url=record_url, proxy_addr=monitor_proxy_address, cookies=state.baidu_cookie))
-        port_info = asyncio.run(stream.get_stream_url(json_data, record_quality))
+        async def _flow():
+            json_data = await spider.get_baidu_stream_data(
+                url=record_url, proxy_addr=monitor_proxy_address, cookies=state.baidu_cookie)
+            return await stream.get_stream_url(json_data, record_quality)
+        port_info = run_async(_flow)
     return '百度直播', port_info, ''
 
 
 def handle_weibo(record_url, record_quality, monitor_proxy_address):
     with state.semaphore:
-        json_data = asyncio.run(spider.get_weibo_stream_data(
-            url=record_url, proxy_addr=monitor_proxy_address, cookies=state.weibo_cookie))
-        port_info = asyncio.run(stream.get_stream_url(
-            json_data, record_quality, hls_extra_key='m3u8_url'))
+        async def _flow():
+            json_data = await spider.get_weibo_stream_data(
+                url=record_url, proxy_addr=monitor_proxy_address, cookies=state.weibo_cookie)
+            return await stream.get_stream_url(
+                json_data, record_quality, hls_extra_key='m3u8_url')
+        port_info = run_async(_flow)
     return '微博直播', port_info, ''
 
 
@@ -165,10 +184,12 @@ def handle_liuxing(record_url, record_quality, monitor_proxy_address):
 
 def handle_acfun(record_url, record_quality, monitor_proxy_address):
     with state.semaphore:
-        json_data = asyncio.run(spider.get_acfun_stream_data(
-            url=record_url, proxy_addr=monitor_proxy_address, cookies=state.acfun_cookie))
-        port_info = asyncio.run(stream.get_stream_url(
-            json_data, record_quality, url_type='flv', flv_extra_key='url'))
+        async def _flow():
+            json_data = await spider.get_acfun_stream_data(
+                url=record_url, proxy_addr=monitor_proxy_address, cookies=state.acfun_cookie)
+            return await stream.get_stream_url(
+                json_data, record_quality, url_type='flv', flv_extra_key='url')
+        port_info = run_async(_flow)
     return 'Acfun', port_info, ''
 
 
@@ -258,11 +279,13 @@ def handle_huamao(record_url, record_quality, monitor_proxy_address):
 
 def handle_taobao(record_url, record_quality, monitor_proxy_address):
     with state.semaphore:
-        json_data = asyncio.run(spider.get_taobao_stream_url(
-            url=record_url, proxy_addr=monitor_proxy_address, cookies=state.taobao_cookie))
-        port_info = asyncio.run(stream.get_stream_url(
-            json_data, record_quality, url_type='all',
-            hls_extra_key='hlsUrl', flv_extra_key='flvUrl'))
+        async def _flow():
+            json_data = await spider.get_taobao_stream_url(
+                url=record_url, proxy_addr=monitor_proxy_address, cookies=state.taobao_cookie)
+            return await stream.get_stream_url(
+                json_data, record_quality, url_type='all',
+                hls_extra_key='hlsUrl', flv_extra_key='flvUrl')
+        port_info = run_async(_flow)
     return '淘宝直播', port_info, ''
 
 

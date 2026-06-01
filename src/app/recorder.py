@@ -246,6 +246,9 @@ def start_record(url_data: tuple, count_variable: int = -1) -> None:
             monitor_proxy_address = get_stage_proxy_address(record_url, state.use_proxy_for_monitoring)
             record_proxy_address = get_stage_proxy_address(record_url, state.use_proxy_for_recording)
             platform = '未知平台'
+            # 状态去重：仅在状态变化时打印 "等待直播 / 正在直播中"
+            # 减少未开播主播每轮一次的高频 print 输出
+            last_live_state: bool | None = None
 
             while True:
                 try:
@@ -292,7 +295,9 @@ def start_record(url_data: tuple, count_variable: int = -1) -> None:
                             run_once = True
 
                         if port_info['is_live'] is False:
-                            print(f"\r{record_name} {_proxy_tag(monitor_proxy_address)} 等待直播... ")
+                            if last_live_state is not False:
+                                print(f"\r{record_name} {_proxy_tag(monitor_proxy_address)} 等待直播... ")
+                                last_live_state = False
                             if start_pushed:
                                 if state.over_show_push:
                                     _push_status(
@@ -302,7 +307,9 @@ def start_record(url_data: tuple, count_variable: int = -1) -> None:
                                     )
                                 start_pushed = False
                         else:
-                            print(f"\r{record_name} 正在直播中...")
+                            if last_live_state is not True:
+                                print(f"\r{record_name} 正在直播中...")
+                                last_live_state = True
 
                             if state.live_status_push and not start_pushed:
                                 if state.begin_show_push:

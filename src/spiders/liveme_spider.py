@@ -9,6 +9,10 @@ import execjs
 from .base import OptionalStr, async_req, trace_error_decorator, JS_SCRIPT_PATH
 
 
+# 模块加载时一次性读取并编译 JS，避免每次直播探测都 open/read/compile
+_LIVEME_JS = execjs.compile(open(f'{JS_SCRIPT_PATH}/liveme.js').read())
+
+
 @trace_error_decorator
 async def get_liveme_stream_url(url: str, proxy_addr: OptionalStr = None, cookies: OptionalStr = None) -> dict:
     headers = {
@@ -26,8 +30,7 @@ async def get_liveme_stream_url(url: str, proxy_addr: OptionalStr = None, cookie
             url = match_url.group(1)
 
     room_id = url.split("/index.html")[0].rsplit('/', maxsplit=1)[-1]
-    sign_data = execjs.compile(open(f'{JS_SCRIPT_PATH}/liveme.js').read()).call('sign', room_id,
-                                                                                f'{JS_SCRIPT_PATH}/crypto-js.min.js')
+    sign_data = _LIVEME_JS.call('sign', room_id, f'{JS_SCRIPT_PATH}/crypto-js.min.js')
     lm_s_sign = sign_data.pop("lm_s_sign")
     tongdun_black_box = sign_data.pop("tongdun_black_box")
     platform = sign_data.pop("os")

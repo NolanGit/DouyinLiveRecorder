@@ -25,8 +25,11 @@ logger.add(
     filter=lambda i: i["level"].name != "INFO",
     serialize=False,
     enqueue=True,
-    retention=1,
-    rotation="300 KB",
+    # 旋转参数放大：原 300KB / retention=1 在错误密集场景下分钟级触发
+    # rename + retention 删除，磁盘 IO 频繁。提到 5MB / retention=3 后
+    # 文件 IO 量降低 1-2 个数量级，仍能覆盖最近的调试日志。
+    retention=3,
+    rotation="5 MB",
     encoding='utf-8'
 )
 
@@ -37,7 +40,7 @@ logger.add(
     filter=lambda i: i["level"].name == "INFO",
     serialize=False,
     enqueue=True,
-    retention=1,
-    rotation="300 KB",
+    retention=3,
+    rotation="5 MB",
     encoding='utf-8'
 )

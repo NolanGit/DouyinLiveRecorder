@@ -13,6 +13,7 @@ from src import spider, stream, utils
 from src.utils import logger
 
 from . import state
+from .platform_async import run_async
 
 
 def _need_proxy(monitor_proxy_address: str | None) -> bool:
@@ -22,11 +23,13 @@ def _need_proxy(monitor_proxy_address: str | None) -> bool:
 def handle_tiktok(record_url, record_quality, monitor_proxy_address):
     with state.semaphore:
         if _need_proxy(monitor_proxy_address):
-            json_data = asyncio.run(spider.get_tiktok_stream_data(
-                url=record_url, proxy_addr=monitor_proxy_address,
-                cookies=state.tiktok_cookie))
-            port_info = asyncio.run(
-                stream.get_tiktok_stream_url(json_data, record_quality, monitor_proxy_address))
+            async def _flow():
+                json_data = await spider.get_tiktok_stream_data(
+                    url=record_url, proxy_addr=monitor_proxy_address,
+                    cookies=state.tiktok_cookie)
+                return await stream.get_tiktok_stream_url(
+                    json_data, record_quality, monitor_proxy_address)
+            port_info = run_async(_flow)
         else:
             logger.error("错误信息: 网络异常，请检查网络是否能正常访问TikTok平台")
             port_info = []
@@ -36,15 +39,17 @@ def handle_tiktok(record_url, record_quality, monitor_proxy_address):
 def handle_sooplive(record_url, record_quality, monitor_proxy_address):
     with state.semaphore:
         if _need_proxy(monitor_proxy_address):
-            json_data = asyncio.run(spider.get_sooplive_stream_data(
-                url=record_url, proxy_addr=monitor_proxy_address,
-                cookies=state.sooplive_cookie,
-                username=state.sooplive_username, password=state.sooplive_password))
-            if json_data and json_data.get('new_cookies'):
-                utils.update_config(
-                    state.config_file, 'Cookie', 'sooplive_cookie',
-                    json_data['new_cookies'])
-            port_info = asyncio.run(stream.get_stream_url(json_data, record_quality, spec=True))
+            async def _flow():
+                json_data = await spider.get_sooplive_stream_data(
+                    url=record_url, proxy_addr=monitor_proxy_address,
+                    cookies=state.sooplive_cookie,
+                    username=state.sooplive_username, password=state.sooplive_password)
+                if json_data and json_data.get('new_cookies'):
+                    utils.update_config(
+                        state.config_file, 'Cookie', 'sooplive_cookie',
+                        json_data['new_cookies'])
+                return await stream.get_stream_url(json_data, record_quality, spec=True)
+            port_info = run_async(_flow)
         else:
             logger.error("错误信息: 网络异常，请检查本网络是否能正常访问SOOP平台")
             port_info = []
@@ -54,10 +59,12 @@ def handle_sooplive(record_url, record_quality, monitor_proxy_address):
 def handle_pandatv(record_url, record_quality, monitor_proxy_address):
     with state.semaphore:
         if _need_proxy(monitor_proxy_address):
-            json_data = asyncio.run(spider.get_pandatv_stream_data(
-                url=record_url, proxy_addr=monitor_proxy_address,
-                cookies=state.pandatv_cookie))
-            port_info = asyncio.run(stream.get_stream_url(json_data, record_quality, spec=True))
+            async def _flow():
+                json_data = await spider.get_pandatv_stream_data(
+                    url=record_url, proxy_addr=monitor_proxy_address,
+                    cookies=state.pandatv_cookie)
+                return await stream.get_stream_url(json_data, record_quality, spec=True)
+            port_info = run_async(_flow)
         else:
             logger.error("错误信息: 网络异常，请检查本网络是否能正常访问PandaTV直播平台")
             port_info = []
@@ -67,10 +74,12 @@ def handle_pandatv(record_url, record_quality, monitor_proxy_address):
 def handle_winktv(record_url, record_quality, monitor_proxy_address):
     with state.semaphore:
         if _need_proxy(monitor_proxy_address):
-            json_data = asyncio.run(spider.get_winktv_stream_data(
-                url=record_url, proxy_addr=monitor_proxy_address,
-                cookies=state.winktv_cookie))
-            port_info = asyncio.run(stream.get_stream_url(json_data, record_quality, spec=True))
+            async def _flow():
+                json_data = await spider.get_winktv_stream_data(
+                    url=record_url, proxy_addr=monitor_proxy_address,
+                    cookies=state.winktv_cookie)
+                return await stream.get_stream_url(json_data, record_quality, spec=True)
+            port_info = run_async(_flow)
         else:
             logger.error("错误信息: 网络异常，请检查本网络是否能正常访问WinkTV直播平台")
             port_info = []
@@ -80,18 +89,19 @@ def handle_winktv(record_url, record_quality, monitor_proxy_address):
 def handle_flextv(record_url, record_quality, monitor_proxy_address):
     with state.semaphore:
         if _need_proxy(monitor_proxy_address):
-            json_data = asyncio.run(spider.get_flextv_stream_data(
-                url=record_url, proxy_addr=monitor_proxy_address,
-                cookies=state.flextv_cookie,
-                username=state.flextv_username, password=state.flextv_password))
-            if json_data and json_data.get('new_cookies'):
-                utils.update_config(
-                    state.config_file, 'Cookie', 'flextv_cookie',
-                    json_data['new_cookies'])
-            if 'play_url_list' in json_data:
-                port_info = asyncio.run(stream.get_stream_url(json_data, record_quality, spec=True))
-            else:
-                port_info = json_data
+            async def _flow():
+                json_data = await spider.get_flextv_stream_data(
+                    url=record_url, proxy_addr=monitor_proxy_address,
+                    cookies=state.flextv_cookie,
+                    username=state.flextv_username, password=state.flextv_password)
+                if json_data and json_data.get('new_cookies'):
+                    utils.update_config(
+                        state.config_file, 'Cookie', 'flextv_cookie',
+                        json_data['new_cookies'])
+                if 'play_url_list' in json_data:
+                    return await stream.get_stream_url(json_data, record_quality, spec=True)
+                return json_data
+            port_info = run_async(_flow)
         else:
             logger.error("错误信息: 网络异常，请检查本网络是否能正常访问FlexTV直播平台")
             port_info = []
@@ -118,12 +128,14 @@ def handle_popkontv(record_url, record_quality, monitor_proxy_address):
 
 def handle_twitcasting(record_url, record_quality, monitor_proxy_address):
     with state.semaphore:
-        json_data = asyncio.run(spider.get_twitcasting_stream_url(
-            url=record_url, proxy_addr=monitor_proxy_address,
-            cookies=state.twitcasting_cookie,
-            account_type=state.twitcasting_account_type,
-            username=state.twitcasting_username, password=state.twitcasting_password))
-        port_info = asyncio.run(stream.get_stream_url(json_data, record_quality, spec=False))
+        async def _flow():
+            json_data = await spider.get_twitcasting_stream_url(
+                url=record_url, proxy_addr=monitor_proxy_address,
+                cookies=state.twitcasting_cookie,
+                account_type=state.twitcasting_account_type,
+                username=state.twitcasting_username, password=state.twitcasting_password)
+            return await stream.get_stream_url(json_data, record_quality, spec=False)
+        port_info = run_async(_flow)
         if port_info and port_info.get('new_cookies'):
             utils.update_config(
                 file_path=state.config_file, section='Cookie',
@@ -134,10 +146,12 @@ def handle_twitcasting(record_url, record_quality, monitor_proxy_address):
 def handle_twitch(record_url, record_quality, monitor_proxy_address):
     with state.semaphore:
         if _need_proxy(monitor_proxy_address):
-            json_data = asyncio.run(spider.get_twitchtv_stream_data(
-                url=record_url, proxy_addr=monitor_proxy_address,
-                cookies=state.twitch_cookie))
-            port_info = asyncio.run(stream.get_stream_url(json_data, record_quality, spec=True))
+            async def _flow():
+                json_data = await spider.get_twitchtv_stream_data(
+                    url=record_url, proxy_addr=monitor_proxy_address,
+                    cookies=state.twitch_cookie)
+                return await stream.get_stream_url(json_data, record_quality, spec=True)
+            port_info = run_async(_flow)
         else:
             logger.error("错误信息: 网络异常，请检查本网络是否能正常访问TwitchTV直播平台")
             port_info = []
@@ -156,17 +170,21 @@ def handle_liveme(record_url, record_quality, monitor_proxy_address):
 
 def handle_showroom(record_url, record_quality, monitor_proxy_address):
     with state.semaphore:
-        json_data = asyncio.run(spider.get_showroom_stream_data(
-            url=record_url, proxy_addr=monitor_proxy_address, cookies=state.showroom_cookie))
-        port_info = asyncio.run(stream.get_stream_url(json_data, record_quality, spec=True))
+        async def _flow():
+            json_data = await spider.get_showroom_stream_data(
+                url=record_url, proxy_addr=monitor_proxy_address, cookies=state.showroom_cookie)
+            return await stream.get_stream_url(json_data, record_quality, spec=True)
+        port_info = run_async(_flow)
     return 'ShowRoom', port_info, ''
 
 
 def handle_chzzk(record_url, record_quality, monitor_proxy_address):
     with state.semaphore:
-        json_data = asyncio.run(spider.get_chzzk_stream_data(
-            url=record_url, proxy_addr=monitor_proxy_address, cookies=state.chzzk_cookie))
-        port_info = asyncio.run(stream.get_stream_url(json_data, record_quality, spec=True))
+        async def _flow():
+            json_data = await spider.get_chzzk_stream_data(
+                url=record_url, proxy_addr=monitor_proxy_address, cookies=state.chzzk_cookie)
+            return await stream.get_stream_url(json_data, record_quality, spec=True)
+        port_info = run_async(_flow)
     return 'CHZZK', port_info, ''
 
 
@@ -182,19 +200,23 @@ def handle_shopee(record_url, record_quality, monitor_proxy_address):
 
 def handle_youtube(record_url, record_quality, monitor_proxy_address):
     with state.semaphore:
-        json_data = asyncio.run(spider.get_youtube_stream_url(
-            url=record_url, proxy_addr=monitor_proxy_address, cookies=state.youtube_cookie))
-        port_info = asyncio.run(stream.get_stream_url(json_data, record_quality, spec=True))
+        async def _flow():
+            json_data = await spider.get_youtube_stream_url(
+                url=record_url, proxy_addr=monitor_proxy_address, cookies=state.youtube_cookie)
+            return await stream.get_stream_url(json_data, record_quality, spec=True)
+        port_info = run_async(_flow)
     return 'Youtube', port_info, ''
 
 
 def handle_faceit(record_url, record_quality, monitor_proxy_address):
     with state.semaphore:
         if _need_proxy(monitor_proxy_address):
-            json_data = asyncio.run(spider.get_faceit_stream_data(
-                url=record_url, proxy_addr=monitor_proxy_address,
-                cookies=state.faceit_cookie))
-            port_info = asyncio.run(stream.get_stream_url(json_data, record_quality, spec=True))
+            async def _flow():
+                json_data = await spider.get_faceit_stream_data(
+                    url=record_url, proxy_addr=monitor_proxy_address,
+                    cookies=state.faceit_cookie)
+                return await stream.get_stream_url(json_data, record_quality, spec=True)
+            port_info = run_async(_flow)
         else:
             logger.error("错误信息: 网络异常，请检查本网络是否能正常访问faceit直播平台")
             port_info = []

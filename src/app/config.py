@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import builtins
 import configparser
+import os
 import threading
 import urllib.request
 from typing import Any
@@ -18,11 +19,45 @@ from src.proxy import ProxyDetector
 from . import state
 
 
+def _ensure_config_loaded(config_parser: configparser.RawConfigParser) -> None:
+    """按 mtime/size 短路读取 config.ini。
+
+    旧实现：每次 ``read_config_value`` 调用都执行 ``parser.read()``，
+    主循环每 3 秒触发约 200 次 open/read/parse 同一个文件，是监控期最大的
+    磁盘 IO 来源。
+
+    新实现：仅在 ``config.ini`` 的 mtime 或 size 与上次缓存值不同时才重新
+    解析；其余调用直接复用 ``config_parser`` 内存对象。``parser`` 本身在
+    :func:`load` 中长期复用（同一个 RawConfigParser 实例）。
+    """
+    try:
+        st = os.stat(state.config_file)
+        mtime, size = st.st_mtime, st.st_size
+    except OSError:
+        # 文件不存在等异常，回退到旧行为
+        config_parser.read(state.config_file, encoding=state.text_encoding)
+        return
+
+    if mtime == state.config_ini_mtime and size == state.config_ini_size \
+            and config_parser.sections():
+        return  # 命中缓存，跳过文件 IO
+
+    config_parser.read(state.config_file, encoding=state.text_encoding)
+    state.config_ini_mtime = mtime
+    state.config_ini_size = size
+
+
+def _invalidate_config_cache() -> None:
+    """写回 config.ini 后让缓存失效（强制下次 load 重新解析）。"""
+    state.config_ini_mtime = 0.0
+    state.config_ini_size = -1
+
+
 def read_config_value(config_parser: configparser.RawConfigParser,
                       section: str, option: str, default_value: Any) -> Any:
     """Read an INI value, creating section/option with the default if missing."""
     try:
-        config_parser.read(state.config_file, encoding=state.text_encoding)
+        _ensure_config_loaded(config_parser)
         for sec in ('录制设置', '推送配置', 'Cookie', 'Authorization', '账号密码'):
             if sec not in config_parser.sections():
                 config_parser.add_section(sec)
@@ -31,6 +66,7 @@ def read_config_value(config_parser: configparser.RawConfigParser,
         config_parser.set(section, option, str(default_value))
         with open(state.config_file, 'w', encoding=state.text_encoding) as f:
             config_parser.write(f)
+        _invalidate_config_cache()
         return default_value
 
 

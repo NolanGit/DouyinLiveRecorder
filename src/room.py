@@ -18,6 +18,10 @@ no_proxy_handler = urllib.request.ProxyHandler({})
 opener = urllib.request.build_opener(no_proxy_handler)
 
 
+# 模块加载时一次性读取并编译 JS，避免每次抖音短链/user URL 探测都 open/read/compile
+_XBOGUS_JS = execjs.compile(open(f'{JS_SCRIPT_PATH}/x-bogus.js').read())
+
+
 class UnsupportedUrlError(Exception):
     pass
 
@@ -43,8 +47,7 @@ async def get_xbogus(url: str, headers: dict | None = None) -> str:
     if not headers or 'user-agent' not in (k.lower() for k in headers):
         headers = HEADERS
     query = urllib.parse.urlparse(url).query
-    xbogus = execjs.compile(open(f'{JS_SCRIPT_PATH}/x-bogus.js').read()).call(
-        'sign', query, headers.get("User-Agent", "user-agent"))
+    xbogus = _XBOGUS_JS.call('sign', query, headers.get("User-Agent", "user-agent"))
     return xbogus
 
 

@@ -58,7 +58,7 @@ def display_info() -> None:
     优化策略：
     - 配置摘要行（max_request / 代理 / 分段 / 质量 / 格式 / 间隔等）只在变化时刷新
     - 录制中：每 5 秒刷新进度（时间在变化）
-    - 完全空闲：每分钟刷新一次心跳
+    - 完全空闲：每 30 秒 wakeup 检查一次，并按 60 秒周期输出心跳
     """
     time.sleep(5)
     last_summary: str | None = None
@@ -66,7 +66,8 @@ def display_info() -> None:
     while True:
         try:
             sys.stdout.flush()
-            time.sleep(5)
+            # 录制中按 5 秒粒度（时间进度要更新）；无录制时按 30 秒粒度（节省 wakeup）
+            time.sleep(5 if state.recording else 30)
 
             # 时间窗口外：精确休眠到下一次窗口开启，避免无意义的 dashboard 刷新
             if not _is_in_monitoring_window():
@@ -153,10 +154,13 @@ def adjust_max_request() -> None:
     """Dynamically scale ``state.max_request`` based on the recent error rate.
 
     窗口外不需要进行调节（无 IO 错误产生），精确休眠到下次窗口开启。
+    无录制且错误窗口为空时拉长检查间隔，避免空转 wakeup。
     """
     preset = state.max_request
     while True:
-        time.sleep(5)
+        # 录制中或最近有错误时按 5 秒粒度；纯监控空闲期按 30 秒粒度
+        idle = not state.recording and not state.error_window and state.error_count == 0
+        time.sleep(30 if idle else 5)
 
         # 时间窗口外：精确休眠到下一次窗口开启，避免空转
         if not _is_in_monitoring_window():
