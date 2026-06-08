@@ -4,7 +4,7 @@ import json
 import re
 import urllib.parse
 
-from .base import OptionalStr, trace_error_decorator, async_req
+from .base import OptionalStr, trace_error_decorator, async_req, IOS_UA
 
 
 @trace_error_decorator
@@ -27,7 +27,7 @@ async def get_huya_stream_data(url: str, proxy_addr: OptionalStr = None, cookies
 @trace_error_decorator
 async def get_huya_app_stream_url(url: str, proxy_addr: OptionalStr = None, cookies: OptionalStr = None) -> dict:
     headers = {
-        'User-Agent': 'ios/7.830 (ios 17.0; ; iPhone 15 (A2846/A3089/A3090/A3092))',
+        'User-Agent': IOS_UA,
         'xweb_xhr': '1',
         'referer': 'https://servicewechat.com/wx74767bf0b684f7d3/301/page-frame.html',
         'accept-language': 'zh-CN,zh;q=0.9',

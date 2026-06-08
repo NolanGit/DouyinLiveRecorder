@@ -11,7 +11,7 @@ async def get_shopee_stream_url(url: str, proxy_addr: OptionalStr = None, cookie
         'accept': 'application/json, text/plain, */*',
         'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6',
         'referer': 'https://live.shopee.sg/share?from=live&session=802458&share_user_id=',
-        'user-agent': 'ios/7.830 (ios 17.0; ; iPhone 15 (A2846/A3089/A3090/A3092))',
+        'user-agent': IOS_UA,
     }
 
     if cookies:

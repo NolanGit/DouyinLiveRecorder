@@ -16,6 +16,15 @@ dependencies = [
     "PyExecJS>=1.5.1"
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
 [project.urls]
 "Homepage" = "https://github.com/ihmily/DouyinLiveRecorder"
 "Documentation" = "https://github.com/ihmily/DouyinLiveRecorder"

@@ -3,7 +3,7 @@
 import json
 import re
 
-from .base import OptionalStr, trace_error_decorator, async_req
+from .base import OptionalStr, trace_error_decorator, async_req, IOS_UA
 
 
 @trace_error_decorator
@@ -11,7 +11,7 @@ async def get_6room_stream_url(url: str, proxy_addr: OptionalStr = None, cookies
     headers = {
         'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6',
         'referer': 'https://ios.6.cn/?ver=8.0.3&build=4',
-        'user-agent': 'ios/7.830 (ios 17.0; ; iPhone 15 (A2846/A3089/A3090/A3092))',
+        'user-agent': IOS_UA,
     }
 
     if cookies:

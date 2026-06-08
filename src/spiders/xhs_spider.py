@@ -3,13 +3,13 @@
 import json
 import re
 
-from .base import OptionalStr, get_params, async_req, trace_error_decorator
+from .base import OptionalStr, get_params, async_req, trace_error_decorator, IOS_UA
 
 
 @trace_error_decorator
 async def get_xhs_stream_url(url: str, proxy_addr: OptionalStr = None, cookies: OptionalStr = None) -> dict:
     headers = {
-        'User-Agent': 'ios/7.830 (ios 17.0; ; iPhone 15 (A2846/A3089/A3090/A3092))',
+        'User-Agent': IOS_UA,
         'xy-common-params': 'platform=iOS&sid=session.1722166379345546829388',
         'referer': 'https://app.xhs.cn/',
     }

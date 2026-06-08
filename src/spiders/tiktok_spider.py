@@ -31,7 +31,9 @@ async def get_tiktok_stream_data(url: str, proxy_addr: OptionalStr = None, cooki
                 json_str = re.findall(
                     '<script id="SIGI_STATE" type="application/json">(.*?)</script>',
                     html_str, re.DOTALL)[0]
-            except Exception:
-                raise ConnectionError("Please check if your network can access the TikTok website normally")
+            except (IndexError, re.error) as e:
+                raise ConnectionError(
+                    "Please check if your network can access the TikTok website normally"
+                ) from e
             json_data = json.loads(json_str)
             return json_data

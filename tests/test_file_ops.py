@@ -37,6 +37,22 @@ def test_delete_line_removes_first_match(tmp_path):
     assert "alpha" in txt and "gamma" in txt
 
 
+def test_delete_lines_removes_each_first_match(tmp_path):
+    p = tmp_path / "u.ini"
+    p.write_text("alpha\nbeta\nbeta\ngamma\ndelta\n", encoding=state.text_encoding)
+    file_ops.delete_lines(str(p), ["beta", "delta"])
+    lines = p.read_text(encoding=state.text_encoding).splitlines()
+    # only the first "beta" removed, second kept; "delta" removed
+    assert lines == ["alpha", "beta", "gamma"]
+
+
+def test_delete_lines_noop_when_empty(tmp_path):
+    p = tmp_path / "u.ini"
+    p.write_text("alpha\nbeta\n", encoding=state.text_encoding)
+    file_ops.delete_lines(str(p), [])
+    assert p.read_text(encoding=state.text_encoding) == "alpha\nbeta\n"
+
+
 def test_backup_file_keeps_limit(tmp_path):
     src = tmp_path / "config.ini"
     src.write_text("k=v", encoding=state.text_encoding)

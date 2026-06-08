@@ -23,6 +23,20 @@ ssl_context.verify_mode = ssl.CERT_NONE
 OptionalStr = str | None
 OptionalDict = dict | None
 
+# Shared User-Agent strings reused across many platform spiders.
+IOS_UA = 'ios/7.830 (ios 17.0; ; iPhone 15 (A2846/A3089/A3090/A3092))'
+FIREFOX_UA = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) '
+              'Gecko/20100101 Firefox/115.0')
+CHROME_UA = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+             '(KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36')
+
+
+def with_cookies(headers: dict, cookies: OptionalStr) -> dict:
+    """Attach ``cookies`` to ``headers`` (under ``Cookie``) when provided."""
+    if cookies:
+        headers['Cookie'] = cookies
+    return headers
+
 
 def get_params(url: str, params: str) -> OptionalStr:
     parsed_url = urllib.parse.urlparse(url)

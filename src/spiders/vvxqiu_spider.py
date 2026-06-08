@@ -3,13 +3,13 @@
 import json
 import urllib.parse
 
-from .base import OptionalStr, trace_error_decorator, async_req, get_params
+from .base import OptionalStr, trace_error_decorator, async_req, get_params, IOS_UA
 
 
 @trace_error_decorator
 async def get_vvxqiu_stream_url(url: str, proxy_addr: OptionalStr = None, cookies: OptionalStr = None) -> dict:
     headers = {
-        'User-Agent': 'ios/7.830 (ios 17.0; ; iPhone 15 (A2846/A3089/A3090/A3092))',
+        'User-Agent': IOS_UA,
         'Access-Control-Request-Method': 'GET',
         'Origin': 'https://h5webcdn-pro.vvxqiu.com',
         'Referer': 'https://h5webcdn-pro.vvxqiu.com/',

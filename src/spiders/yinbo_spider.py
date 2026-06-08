@@ -3,13 +3,13 @@
 import json
 import re
 
-from .base import OptionalStr, async_req, trace_error_decorator
+from .base import OptionalStr, async_req, trace_error_decorator, IOS_UA
 
 
 @trace_error_decorator
 async def get_yinbo_stream_url(url: str, proxy_addr: OptionalStr = None, cookies: OptionalStr = None) -> dict:
     headers = {
-        'User-Agent': 'ios/7.830 (ios 17.0; ; iPhone 15 (A2846/A3089/A3090/A3092))',
+        'User-Agent': IOS_UA,
         'Accept': 'application/json, text/plain, */*',
         'Accept-Language': 'zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2',
         'Referer': 'https://live.ybw1666.com/800005143?promoters=0',

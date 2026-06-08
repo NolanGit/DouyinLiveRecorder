@@ -13,7 +13,7 @@ import re
 from src.utils import logger
 
 from . import state
-from .file_ops import delete_line, update_file
+from .file_ops import delete_lines, update_file
 from .naming import contains_url
 
 
@@ -163,9 +163,8 @@ def parse_url_config() -> None:
                         new_str=origin_line, start_str='#',
                     )
 
-    # 批量删除重复行（合并到一次写入循环中可减少 IO）
-    for dup in duplicate_lines + duplicate_origin_urls:
-        delete_line(state.url_config_file, dup)
+    # 批量删除重复行：一次性读写文件，避免逐行 delete_line 的多次全文件重写
+    delete_lines(state.url_config_file, duplicate_lines + duplicate_origin_urls)
 
     while state.need_update_line_list:
         a = state.need_update_line_list.pop()

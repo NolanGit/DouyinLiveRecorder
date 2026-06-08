@@ -106,6 +106,37 @@ def delete_line(file_path: str, del_line: str, delete_all: bool = False) -> None
                 f.writelines(new_lines)
 
 
+def delete_lines(file_path: str, del_lines) -> None:
+    """Delete the first occurrence of each substring in ``del_lines`` in one pass.
+
+    性能优化：替代对每个待删除项分别调用 :func:`delete_line`（每次都全量读写
+    文件，k 个重复项即 k 次全文件重写）。这里只读写一次。每个待删除子串仅删除
+    其首次命中行，与逐个调用 ``delete_line`` 的语义保持一致。
+    """
+    pending = [d for d in del_lines if d]
+    if not pending:
+        return
+    with state.file_update_lock:
+        with open(file_path, 'r', encoding=state.text_encoding) as f:
+            lines = f.readlines()
+
+        any_deleted = False
+        new_lines: list[str] = []
+        for txt_line in lines:
+            matched_idx = next(
+                (i for i, d in enumerate(pending) if d in txt_line), None,
+            )
+            if matched_idx is not None:
+                pending.pop(matched_idx)
+                any_deleted = True
+                continue
+            new_lines.append(txt_line)
+
+        if any_deleted:
+            with open(file_path, 'w', encoding=state.text_encoding) as f:
+                f.writelines(new_lines)
+
+
 def backup_file(file_path: str, backup_dir_path: str, limit_counts: int = 6) -> None:
     """Create a timestamped backup, keeping at most ``limit_counts`` copies."""
     try:

@@ -3,7 +3,7 @@
 import json
 import re
 
-from .base import OptionalStr, trace_error_decorator, async_req, get_params, utils
+from .base import OptionalStr, trace_error_decorator, async_req, get_params, utils, IOS_UA
 
 
 @trace_error_decorator
@@ -17,7 +17,7 @@ async def login_twitcasting(
         'Content-Type': 'application/x-www-form-urlencoded',
         'Referer': 'https://twitcasting.tv/indexcaslogin.php?redir=%2Findexloginwindow.php%3Fnext%3D%252F&keep=1',
         'Cookie': 'hl=zh; did=04fb08f1b15d248644f1dfa82816d323; _ga=GA1.1.1021187740.1709706998; keep=1; mfadid=yrQiEB26ruRg7mlMavABMBZWdOddzojW; _ga_X8R46Y30YM=GS1.1.1709706998.1.1.1709712274.0.0.0',
-        'User-Agent': 'ios/7.830 (ios 17.0; ; iPhone 15 (A2846/A3089/A3090/A3092))',
+        'User-Agent': IOS_UA,
     }
 
     if cookies:

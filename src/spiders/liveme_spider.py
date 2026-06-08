@@ -6,7 +6,7 @@ import urllib.parse
 
 import execjs
 
-from .base import OptionalStr, async_req, trace_error_decorator, JS_SCRIPT_PATH
+from .base import OptionalStr, async_req, trace_error_decorator, JS_SCRIPT_PATH, IOS_UA
 
 
 # 模块加载时一次性读取并编译 JS，避免每次直播探测都 open/read/compile
@@ -18,7 +18,7 @@ async def get_liveme_stream_url(url: str, proxy_addr: OptionalStr = None, cookie
     headers = {
         'origin': 'https://www.liveme.com',
         'referer': 'https://www.liveme.com',
-        'user-agent': 'ios/7.830 (ios 17.0; ; iPhone 15 (A2846/A3089/A3090/A3092))',
+        'user-agent': IOS_UA,
     }
     if cookies:
         headers['Cookie'] = cookies

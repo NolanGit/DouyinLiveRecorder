@@ -2,7 +2,7 @@
 
 import json
 
-from .base import OptionalStr, trace_error_decorator, async_req
+from .base import OptionalStr, trace_error_decorator, async_req, IOS_UA
 
 
 @trace_error_decorator
@@ -10,7 +10,7 @@ async def get_17live_stream_url(url: str, proxy_addr: OptionalStr = None, cookie
     headers = {
         'origin': 'https://17.live',
         'referer': 'https://17.live/',
-        'user-agent': 'ios/7.830 (ios 17.0; ; iPhone 15 (A2846/A3089/A3090/A3092))',
+        'user-agent': IOS_UA,
     }
 
     if cookies:

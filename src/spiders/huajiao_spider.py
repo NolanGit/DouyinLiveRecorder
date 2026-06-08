@@ -29,10 +29,10 @@ async def get_huajiao_sn(url: str, cookies: OptionalStr = None, proxy_addr: Opti
         nickname = json_data['author']['nickname']
         live_id = url.split('?')[0].rsplit('/', maxsplit=1)[1]
         return nickname, sn, uid, live_id
-    except Exception:
+    except Exception as e:
         utils.replace_url(f'{script_path}/config/URL_config.ini', old=url, new='#' + url)
         raise RuntimeError("Failed to retrieve live room data, the Huajiao live room address is not fixed, please use "
-                           "the anchor's homepage address for recording.")
+                           "the anchor's homepage address for recording.") from e
 
 
 async def get_huajiao_user_info(url: str, cookies: OptionalStr = None, proxy_addr: OptionalStr = None) -> OptionalDict:

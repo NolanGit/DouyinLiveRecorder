@@ -6,7 +6,7 @@ import re
 import time
 import urllib.parse
 
-from .base import OptionalStr, trace_error_decorator, async_req
+from .base import OptionalStr, trace_error_decorator, async_req, IOS_UA
 
 
 @trace_error_decorator
@@ -15,7 +15,7 @@ async def get_baidu_stream_data(url: str, proxy_addr: OptionalStr = None, cookie
         'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6',
         'Connection': 'keep-alive',
         'Referer': 'https://live.baidu.com/',
-        'User-Agent': 'ios/7.830 (ios 17.0; ; iPhone 15 (A2846/A3089/A3090/A3092))',
+        'User-Agent': IOS_UA,
     }
     if cookies:
         headers['Cookie'] = cookies
