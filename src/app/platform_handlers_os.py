@@ -7,8 +7,6 @@ can retry on the next loop.
 """
 from __future__ import annotations
 
-import asyncio
-
 from src import spider, stream, utils
 from src.utils import logger
 
@@ -111,7 +109,7 @@ def handle_flextv(record_url, record_quality, monitor_proxy_address):
 def handle_popkontv(record_url, record_quality, monitor_proxy_address):
     with state.semaphore:
         if _need_proxy(monitor_proxy_address):
-            port_info = asyncio.run(spider.get_popkontv_stream_url(
+            port_info = run_async(lambda: spider.get_popkontv_stream_url(
                 url=record_url, proxy_addr=monitor_proxy_address,
                 access_token=state.popkontv_access_token,
                 username=state.popkontv_username, password=state.popkontv_password,
@@ -161,7 +159,7 @@ def handle_twitch(record_url, record_quality, monitor_proxy_address):
 def handle_liveme(record_url, record_quality, monitor_proxy_address):
     if _need_proxy(monitor_proxy_address):
         with state.semaphore:
-            port_info = asyncio.run(spider.get_liveme_stream_url(
+            port_info = run_async(lambda: spider.get_liveme_stream_url(
                 url=record_url, proxy_addr=monitor_proxy_address, cookies=state.liveme_cookie))
         return 'LiveMe', port_info, ''
     logger.error("错误信息: 网络异常，请检查本网络是否能正常访问LiveMe直播平台")
@@ -191,7 +189,7 @@ def handle_chzzk(record_url, record_quality, monitor_proxy_address):
 def handle_shopee(record_url, record_quality, monitor_proxy_address):
     new_record_url = ''
     with state.semaphore:
-        port_info = asyncio.run(spider.get_shopee_stream_url(
+        port_info = run_async(lambda: spider.get_shopee_stream_url(
             url=record_url, proxy_addr=monitor_proxy_address, cookies=state.shopee_cookie))
         if port_info.get('uid'):
             new_record_url = record_url.split('?')[0] + '?' + str(port_info['uid'])
@@ -225,6 +223,6 @@ def handle_faceit(record_url, record_quality, monitor_proxy_address):
 
 def handle_picarto(record_url, record_quality, monitor_proxy_address):
     with state.semaphore:
-        port_info = asyncio.run(spider.get_picarto_stream_url(
+        port_info = run_async(lambda: spider.get_picarto_stream_url(
             url=record_url, proxy_addr=monitor_proxy_address, cookies=state.picarto_cookie))
     return 'Picarto', port_info, ''

@@ -35,6 +35,41 @@ os_type = os.name
 clear_command = "cls" if os_type == "nt" else "clear"
 color_obj = utils.Color()
 
+class ConcurrencyLimiter:
+    """可调整上限的并发闸门。
+
+    ``threading.Semaphore`` 不能在已有等待者时安全地改上限。平台请求使用
+    ``with state.semaphore``，因此上限变化必须发生在同一个对象上。
+    """
+
+    def __init__(self, limit: int) -> None:
+        self._limit = max(1, int(limit))
+        self._in_use = 0
+        self._cond = threading.Condition()
+
+    @property
+    def limit(self) -> int:
+        return self._limit
+
+    def set_limit(self, limit: int) -> None:
+        with self._cond:
+            self._limit = max(1, int(limit))
+            self._cond.notify_all()
+
+    def __enter__(self):
+        with self._cond:
+            while self._in_use >= self._limit:
+                self._cond.wait()
+            self._in_use += 1
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        with self._cond:
+            self._in_use = max(0, self._in_use - 1)
+            self._cond.notify()
+        return False
+
+
 # ---------- mutable runtime state ----------
 recording: set = set()
 error_count: int = 0
@@ -47,14 +82,16 @@ error_threshold: int = 5
 monitoring: int = 0
 running_list: set = set()  # 已启动录制线程的 URL 集合（O(1) 查找）
 url_tuples_list: set = set()  # 待启动的 (quality, url, name) 三元组集合
-url_comments: list = []
+url_comments: set = set()
 text_no_repeat_url: list = []
 create_var: dict = {}
 first_start: bool = True
 exit_recording: bool = False
+shutdown_requested: bool = False
+shutdown_event = threading.Event()
 need_update_line_list: list = []
 first_run: bool = True
-not_record_list: list = []
+not_record_list: set = set()
 start_display_time = datetime.datetime.now()
 global_proxy: bool = False
 recording_time_list: dict = {}
@@ -70,6 +107,8 @@ url_config_parse_lock = threading.Lock()
 # 加上 mtime/size 短路后，未变化时所有 read_config_value() 调用共享同一份内存解析结果
 config_ini_mtime: float = 0.0
 config_ini_size: int = -1
+config_snapshot_path: str = ""
+config_applied: bool = False
 
 options: dict = {"是": True, "否": False}
 
@@ -90,7 +129,11 @@ use_proxy_for_recording: bool = True
 proxy_addr_bak: str = ""
 proxy_addr: str | None = None
 max_request: int = 3
-semaphore: threading.Semaphore = threading.Semaphore(3)
+# 配置文件中的线程数。运行时 ``max_request`` 可被错误率调低，重载未改动的配置时不能把它写回去。
+configured_max_request: int | None = None
+semaphore: ConcurrencyLimiter = ConcurrencyLimiter(3)
+# 录完后的转码最多同时两路，避免和正在录制的 ffmpeg 抢 CPU
+transcode_semaphore: threading.Semaphore = threading.Semaphore(2)
 delay_default: int = 120
 local_delay_default: int = 0
 loop_time: bool = False

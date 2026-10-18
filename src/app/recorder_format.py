@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import os
-import subprocess
-import threading
 import time
 
 from src.utils import logger
@@ -12,7 +10,7 @@ from src import utils
 
 from . import state
 from .ffmpeg_runner import check_subprocess
-from .post_process import converts_mp4, segment_video
+from .post_process import converts_mp4, segment_video, spawn_transcode
 
 
 def _do_check(record_name, record_url, ffmpeg_command,
@@ -55,9 +53,7 @@ def record_flv(ffmpeg_command, full_path, anchor_name, title_in_name, now,
                     is_original_delete=state.delete_origin_file,
                 )
             else:
-                threading.Thread(
-                    target=converts_mp4, args=(save_file_path, state.delete_origin_file),
-                ).start()
+                spawn_transcode(converts_mp4, save_file_path, state.delete_origin_file)
         elif state.split_video_by_time:
             seg_file_path = f"{full_path}/{anchor_name}_{title_in_name}{now}_%03d.flv"
             segment_video(
@@ -140,12 +136,7 @@ def record_ts(ffmpeg_command, full_path, anchor_name, title_in_name, now,
             prefix = os.path.basename(save_file_path).rsplit('_', maxsplit=1)[0]
             for path in file_paths:
                 if prefix in path:
-                    try:
-                        threading.Thread(
-                            target=converts_mp4, args=(path, state.delete_origin_file),
-                        ).start()
-                    except subprocess.CalledProcessError as e:
-                        logger.error(f"转码失败: {e} ")
+                    spawn_transcode(converts_mp4, path, state.delete_origin_file)
         return comment_end
 
     filename = anchor_name + f'_{title_in_name}' + now + ".ts"
@@ -159,9 +150,7 @@ def record_ts(ffmpeg_command, full_path, anchor_name, title_in_name, now,
         record_name, record_url, ffmpeg_command, record_save_type, record_proxy_address,
     )
     if comment_end:
-        threading.Thread(
-            target=converts_mp4, args=(save_file_path, state.delete_origin_file),
-        ).start()
+        spawn_transcode(converts_mp4, save_file_path, state.delete_origin_file)
     return comment_end
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime
 import os
 import subprocess
+import threading
 import time
 
 from src.utils import logger
@@ -41,6 +42,15 @@ def segment_video(converts_file_path: str, segment_save_file_path: str,
         logger.error(f'Error occurred during conversion: {e}')
     except Exception as e:  # noqa: BLE001
         logger.error(f'An unknown error occurred: {e}')
+
+
+def spawn_transcode(func, *args) -> None:
+    """在后台转码，同时最多 ``state.transcode_semaphore`` 路。"""
+    def _run() -> None:
+        with state.transcode_semaphore:
+            func(*args)
+
+    threading.Thread(target=_run, daemon=True).start()
 
 
 def converts_mp4(converts_file_path: str, is_original_delete: bool = True) -> None:

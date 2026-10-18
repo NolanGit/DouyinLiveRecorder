@@ -75,7 +75,7 @@ def parse_url_config() -> None:
         # （已被消费的 spawn 列表无需重新解析）
         return
 
-    state.url_comments = []
+    state.url_comments = set()
     line_set: set[str] = set()        # 用于检测重复行
     url_set: set[str] = set()         # 用于检测重复 URL
     duplicate_lines: list[str] = []   # 待删除的重复整行
@@ -147,9 +147,9 @@ def parse_url_config() -> None:
                         new_url = url.split('?')[0] + f'?host_id={host_id.group(1)}'
                         url = update_file(state.url_config_file, old_str=url, new_str=new_url)
 
-                state.url_comments = [i for i in state.url_comments if url not in i]
+                state.url_comments.discard(url)
                 if is_comment_line:
-                    state.url_comments.append(url)
+                    state.url_comments.add(url)
                 else:
                     state.url_tuples_list.add((quality, url, name))
             else:

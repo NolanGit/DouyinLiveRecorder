@@ -27,8 +27,23 @@ from .url_loader import ensure_url_config_ready, parse_url_config
 
 
 def _signal_handler(_signal, _frame):
-    """捕获 SIGTERM 信号，确保进程能够优雅退出。"""
-    sys.exit(0)
+    """捕获退出信号，通知录制线程停下来，并唤醒主循环。"""
+    state.shutdown_requested = True
+    state.exit_recording = True
+    state.shutdown_event.set()
+
+
+def _interruptible_sleep(seconds: float) -> None:
+    """可被退出信号提前唤醒的休眠。"""
+    if seconds > 0:
+        state.shutdown_event.wait(seconds)
+
+
+def _drain_recordings(timeout: float = 20) -> None:
+    """等待正在录制的 ffmpeg / 直链下载收到停止标记后退出。"""
+    deadline = time.time() + timeout
+    while state.recording and time.time() < deadline:
+        state.shutdown_event.wait(0.5)
 
 
 def _print_banner() -> None:
@@ -133,13 +148,13 @@ def _sleep_until_window_or_short(short_secs: int = 3) -> None:
       （为了让磁盘检查/配置重载提前一点完成，最多休眠到窗口前 5 秒）
     """
     if not state.time_window_enabled or _is_in_monitoring_window():
-        time.sleep(short_secs)
+        _interruptible_sleep(short_secs)
         return
 
     secs = seconds_until_next_window_open(_build_time_window_config())
     # 提前 5 秒醒来，让 disk_capacity / config 加载在窗口开启前就绪
     secs = max(short_secs, secs - 5)
-    time.sleep(secs)
+    _interruptible_sleep(secs)
 
 
 def _spawn_recorders() -> None:
@@ -175,7 +190,9 @@ def _spawn_recorders() -> None:
             t.start()
             state.running_list.add(url_tuple[1])
             # 启动间隔延迟，避免同一时刻大量并发请求
-            time.sleep(state.local_delay_default)
+            _interruptible_sleep(state.local_delay_default)
+            if state.shutdown_requested:
+                return
     # 清空待处理列表，标记首次启动已完成
     state.url_tuples_list = set()
     state.first_start = False
@@ -199,6 +216,9 @@ def run() -> None:
 
     while True:
         try:
+            if state.shutdown_requested:
+                _drain_recordings()
+                sys.exit(0)
             ensure_url_config_ready()       # 确保 URL_config.ini 存在
             config_mod.load()               # 加载/刷新配置项到 state
             _check_disk_capacity()          # 磁盘空间检查
@@ -214,6 +234,10 @@ def run() -> None:
             threading.Thread(target=display_info, daemon=True).start()
             threading.Thread(target=adjust_max_request, daemon=True).start()
             state.first_run = False
+
+        if state.shutdown_requested:
+            _drain_recordings()
+            sys.exit(0)
 
         # 轮询间隔 3 秒（窗口外则精确休眠到下一次窗口开启前 5 秒，避免空转）
         _sleep_until_window_or_short(3)

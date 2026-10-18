@@ -9,6 +9,36 @@ from typing import List
 from .base import OptionalStr, get_params, async_req, trace_error_decorator
 
 
+def _loads_soop(json_str: str, api_name: str) -> dict:
+    """Parse a SOOP API response defensively.
+
+    ``async_req`` 在网络异常时会吞掉异常并返回错误字符串而非 JSON，
+    SOOP 接口也偶发返回空响应。直接 ``json.loads`` 会抛出难以理解的
+    "Expecting value: line 1 column 1 (char 0)"。这里转成带接口名和响应
+    片段的清晰错误，便于定位是哪个接口的瞬时空响应（recorder 下一轮会重试）。
+    """
+    if not json_str or not json_str.strip():
+        raise RuntimeError(f"SOOP {api_name} 返回空响应（可能是网络瞬时错误或被限流），将重试")
+    try:
+        return json.loads(json_str)
+    except json.JSONDecodeError as e:
+        snippet = json_str.strip()[:120]
+        raise RuntimeError(
+            f"SOOP {api_name} 返回非 JSON 响应（可能是网络瞬时错误或被限流），将重试。响应片段: {snippet!r}"
+        ) from e
+
+
+def _get_soop_data(json_data: dict, api_name: str) -> dict:
+    data = json_data.get("data") if isinstance(json_data, dict) else None
+    if isinstance(data, dict):
+        return data
+
+    snippet = json.dumps(json_data, ensure_ascii=False)[:200]
+    raise RuntimeError(
+        f"SOOP {api_name} 响应缺少 data 字段（可能是接口限流、鉴权失效或平台返回异常），将重试。响应片段: {snippet!r}"
+    )
+
+
 @trace_error_decorator
 async def login_sooplive(username: str, password: str, proxy_addr: OptionalStr = None) -> OptionalStr:
     if len(username) < 6 or len(password) < 10:
@@ -67,11 +97,17 @@ async def get_sooplive_cdn_url(broad_no: str, proxy_addr: OptionalStr = None, co
         'time': '8361.086329376785',
     }
 
-    url2 = 'http://livestream-manager.sooplive.co.kr/broad_stream_assign.html?' + urllib.parse.urlencode(params)
-    json_str = await async_req(url=url2, proxy_addr=proxy_addr, headers=headers, abroad=True)
-    json_data = json.loads(json_str)
+    query = urllib.parse.urlencode(params)
+    last_error: Exception | None = None
+    for host in ("livestream-manager.sooplive.com", "livestream-manager.sooplive.co.kr"):
+        url2 = f'http://{host}/broad_stream_assign.html?{query}'
+        json_str = await async_req(url=url2, proxy_addr=proxy_addr, headers=headers, abroad=True)
+        try:
+            return _loads_soop(json_str, f"broad_stream_assign({host})")
+        except RuntimeError as e:
+            last_error = e
 
-    return json_data
+    raise last_error or RuntimeError("SOOP broad_stream_assign failed")
 
 
 @trace_error_decorator
@@ -106,7 +142,7 @@ async def get_sooplive_tk(url: str, rtype: str, proxy_addr: OptionalStr = None, 
 
     url2 = f'https://live.sooplive.co.kr/afreeca/player_live_api.php?bjid={bj_id}'
     json_str = await async_req(url=url2, proxy_addr=proxy_addr, headers=headers, data=data, abroad=True)
-    json_data = json.loads(json_str)
+    json_data = _loads_soop(json_str, "player_live_api")
 
     if rtype == 'aid':
         token = json_data["CHANNEL"]["AID"]
@@ -132,7 +168,7 @@ async def _get_soop_channel_info_global(bj_id, proxy_addr: OptionalStr = None, c
     headers = get_soop_headers(cookies)
     api = 'https://api.sooplive.com/v2/channel/info/' + str(bj_id)
     json_str = await async_req(api, proxy_addr=proxy_addr, headers=headers)
-    json_data = json.loads(json_str)
+    json_data = _loads_soop(json_str, "channel/info")
     nickname = json_data['data']['streamerChannelInfo']['nickname']
     channelId = json_data['data']['streamerChannelInfo']['channelId']
     anchor_name = f"{nickname}-{channelId}"
@@ -143,7 +179,7 @@ async def _get_soop_stream_info_global(bj_id, proxy_addr: OptionalStr = None, co
     headers = get_soop_headers(cookies)
     api = 'https://api.sooplive.com/v2/stream/info/' + str(bj_id)
     json_str = await async_req(api, proxy_addr=proxy_addr, headers=headers)
-    json_data = json.loads(json_str)
+    json_data = _loads_soop(json_str, "stream/info")
     status = json_data['data']['isStream']
     title = json_data['data']['title']
     return status, title
@@ -221,12 +257,13 @@ async def get_sooplive_stream_data(
     url2 = 'http://api.m.sooplive.co.kr/broad/a/watch'
 
     json_str = await async_req(url=url2, proxy_addr=proxy_addr, headers=headers, data=data, abroad=True)
-    json_data = json.loads(json_str)
+    json_data = _loads_soop(json_str, "broad/a/watch")
+    watch_data = _get_soop_data(json_data, "broad/a/watch")
 
-    if 'user_nick' in json_data['data']:
-        anchor_name = json_data['data']['user_nick']
-        if "bj_id" in json_data['data']:
-            anchor_name = f"{anchor_name}-{json_data['data']['bj_id']}"
+    if 'user_nick' in watch_data:
+        anchor_name = watch_data['user_nick']
+        if "bj_id" in watch_data:
+            anchor_name = f"{anchor_name}-{watch_data['bj_id']}"
     else:
         anchor_name = ''
 
@@ -267,11 +304,11 @@ async def get_sooplive_stream_data(
             }
             return _result
 
-        if json_data['data']['code'] == -3001:
+        if watch_data.get('code') == -3001:
             print("sooplive live stream failed to retrieve, the live stream just ended.")
             return result
 
-        elif json_data['data']['code'] == -3002:
+        elif watch_data.get('code') == -3002:
             print("sooplive live stream retrieval failed, the live needs 19+, you are not logged in.")
             print("Attempting to log in to the sooplive live streaming platform with your account and password, "
                   "please ensure it is configured.")
@@ -280,17 +317,19 @@ async def get_sooplive_stream_data(
                 return await fetch_data(new_cookie, result)
             raise RuntimeError("sooplive login failed, please check if the account and password are correct")
 
-        elif json_data['data']['code'] == -3004:
+        elif watch_data.get('code') == -3004:
             if cookies and len(cookies) > 0:
                 return await fetch_data(cookies, result)
             else:
                 raise RuntimeError("sooplive login failed, please check if the account and password are correct")
-        elif json_data['data']['code'] == -6001:
+        elif watch_data.get('code') == -6001:
             print("error message：Please check if the input sooplive live room address "
                   "is correct.")
             return result
-    if json_data['result'] == 1 and anchor_name:
-        broad_no = json_data['data']['broad_no']
+    if json_data.get('result') == 1 and anchor_name:
+        broad_no = watch_data.get('broad_no')
+        if not broad_no:
+            raise RuntimeError("SOOP broad/a/watch 响应缺少 broad_no 字段，将重试")
         # 注意：移动端 ``api.m.sooplive.co.kr/broad/a/watch`` 返回的 ``hls_authentication_key``
         # 是受限的移动端 token，对应的 ``master.m3u8`` 只会返回 hd(540p) 一档清晰度。
         # 必须改用桌面端 ``player_live_api.php`` 取 aid token，才能在同一个
@@ -299,7 +338,9 @@ async def get_sooplive_stream_data(
             aid_token = await get_sooplive_tk(url, rtype='aid', proxy_addr=proxy_addr, cookies=cookies)
         except Exception:  # noqa: BLE001
             # 桌面端 API 失败时降级回移动端 token，至少能拿到 540p 录制。
-            aid_token = json_data['data']['hls_authentication_key']
+            aid_token = watch_data.get('hls_authentication_key')
+            if not aid_token:
+                raise RuntimeError("SOOP broad/a/watch 响应缺少 hls_authentication_key 字段，将重试")
         view_url_data = await get_sooplive_cdn_url(broad_no, proxy_addr=proxy_addr)
         view_url = view_url_data['view_url']
         m3u8_url = view_url + '?aid=' + aid_token

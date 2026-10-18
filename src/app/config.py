@@ -9,7 +9,6 @@ from __future__ import annotations
 import builtins
 import configparser
 import os
-import threading
 import urllib.request
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -17,6 +16,47 @@ from urllib.error import HTTPError, URLError
 from src.proxy import ProxyDetector
 
 from . import state
+
+# 主循环反复调用 load()。复用同一个 parser，配置文件未变化时整段赋值都可以跳过。
+_PARSER: configparser.RawConfigParser | None = None
+_PARSER_PATH: str | None = None
+
+
+def _shared_parser(explicit: configparser.RawConfigParser | None) -> configparser.RawConfigParser:
+    """返回可跨轮次复用的 parser。配置路径变化时丢弃旧解析结果。"""
+    global _PARSER, _PARSER_PATH
+    if explicit is not None:
+        return explicit
+    if _PARSER is None or _PARSER_PATH != state.config_file:
+        _PARSER = configparser.RawConfigParser()
+        _PARSER_PATH = state.config_file
+        state.config_applied = False
+    return _PARSER
+
+
+def _config_unchanged(parser: configparser.RawConfigParser, explicit: bool) -> bool:
+    """配置文件路径、mtime、size 都没变，且已经成功应用过一次。"""
+    if explicit or not state.config_applied or not parser.sections():
+        return False
+    if state.config_snapshot_path != state.config_file:
+        return False
+    try:
+        st = os.stat(state.config_file)
+    except OSError:
+        return False
+    return st.st_mtime == state.config_ini_mtime and st.st_size == state.config_ini_size
+
+
+def _snapshot_config_file() -> None:
+    """记录本次 load 结束时的文件指纹，供下一轮短路比较。"""
+    try:
+        st = os.stat(state.config_file)
+    except OSError:
+        return
+    state.config_ini_mtime = st.st_mtime
+    state.config_ini_size = st.st_size
+    state.config_snapshot_path = state.config_file
+    state.config_applied = True
 
 
 def _ensure_config_loaded(config_parser: configparser.RawConfigParser) -> None:
@@ -108,9 +148,14 @@ def init_language() -> None:
 
 
 def load(config: configparser.RawConfigParser | None = None) -> configparser.RawConfigParser:
-    """Read every configuration value into :mod:`src.app.state`."""
-    if config is None:
-        config = configparser.RawConfigParser()
+    """Read every configuration value into :mod:`src.app.state`.
+
+    文件未变化时直接返回，避免每 3 秒重写 ``max_request`` 并换掉并发闸门。
+    """
+    explicit = config is not None
+    config = _shared_parser(config)
+    if _config_unchanged(config, explicit):
+        return config
 
     rc = lambda section, option, default: read_config_value(config, section, option, default)  # noqa: E731
     opts = state.options.get
@@ -128,8 +173,14 @@ def load(config: configparser.RawConfigParser | None = None) -> configparser.Raw
     state.use_proxy_for_recording = opts(rc('录制设置', '是否使用代理录制直播流(是/否)', "是"), True)
     state.proxy_addr_bak = rc('录制设置', '代理地址', "")
     state.proxy_addr = None if not state.use_proxy else state.proxy_addr_bak
-    state.max_request = int(rc('录制设置', '同一时间访问网络的线程数', 3))
-    state.semaphore = threading.Semaphore(state.max_request)
+    # 只在配置值真正变化时重置运行时并发，并调整同一个闸门的上限。
+    configured_threads = int(rc('录制设置', '同一时间访问网络的线程数', 3))
+    with state.max_request_lock:
+        if configured_threads != state.configured_max_request:
+            state.configured_max_request = configured_threads
+            state.max_request = configured_threads
+            state.pre_max_request = configured_threads
+            state.semaphore.set_limit(configured_threads)
     state.delay_default = int(rc('录制设置', '循环时间(秒)', 120))
     state.local_delay_default = int(rc('录制设置', '排队读取网址时间(秒)', 0))
     state.loop_time = opts(rc('录制设置', '是否显示循环秒数', "否"), False)
@@ -263,4 +314,6 @@ def load(config: configparser.RawConfigParser | None = None) -> configparser.Raw
     else:
         state.video_save_type = "TS"
 
+    if not explicit:
+        _snapshot_config_file()
     return config

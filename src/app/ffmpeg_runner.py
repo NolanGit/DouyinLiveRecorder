@@ -18,7 +18,7 @@ from ffmpeg_install import check_ffmpeg
 from . import state
 from .file_ops import get_no_proxy_env, get_startup_info
 from .naming import get_record_headers
-from .post_process import converts_mp4, generate_subtitles
+from .post_process import converts_mp4, generate_subtitles, spawn_transcode
 
 
 def run_script(command: str) -> None:
@@ -58,7 +58,7 @@ def direct_download_stream(source_url: str, save_path: str, record_name: str,
                            proxy_addr: str | None = None) -> bool:
     """Download a FLV stream straight to disk (used by FLV-only platforms)."""
     try:
-        with open(save_path, 'wb') as f:
+        with open(save_path, 'wb', buffering=1024 * 1024) as f:
             client = httpx.Client(
                 timeout=None,
                 proxy=utils.handle_proxy_addr(proxy_addr),
@@ -75,7 +75,7 @@ def direct_download_stream(source_url: str, save_path: str, record_name: str,
                     logger.error(f"请求直播流失败，状态码: {response.status_code}")
                     return False
                 downloaded = 0
-                chunk_size = 1024 * 16
+                chunk_size = 256 * 1024
                 for chunk in response.iter_bytes(chunk_size):
                     if live_url in state.url_comments or state.exit_recording:
                         state.color_obj.print_colored(
@@ -94,6 +94,20 @@ def direct_download_stream(source_url: str, save_path: str, record_name: str,
         return False
 
 
+def _drain_ffmpeg_stderr(process: subprocess.Popen, record_name: str) -> None:
+    """读掉 ffmpeg 错误输出，避免管道写满后子进程卡住。"""
+    stream = process.stderr
+    if stream is None:
+        return
+    try:
+        for line in stream:
+            text = line.decode('utf-8', errors='replace').strip()
+            if text:
+                logger.error(f"[{record_name}] ffmpeg: {text}")
+    except Exception:  # noqa: BLE001
+        return
+
+
 def check_subprocess(record_name: str, record_url: str, ffmpeg_command: list,
                      save_type: str, script_command: str | None = None,
                      proxy_addr: str | None = None) -> bool:
@@ -102,10 +116,14 @@ def check_subprocess(record_name: str, record_url: str, ffmpeg_command: list,
     process = subprocess.Popen(
         ffmpeg_command,
         stdin=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
         startupinfo=get_startup_info(state.os_type),
         env=get_no_proxy_env(),
     )
+    threading.Thread(
+        target=_drain_ffmpeg_stderr, args=(process, record_name), daemon=True,
+    ).start()
 
     subs_file_path = save_file_path.rsplit('.', maxsplit=1)[0]
     subs_thread_name = f'subs_{Path(subs_file_path).name}'
@@ -146,13 +164,9 @@ def check_subprocess(record_name: str, record_url: str, ffmpeg_command: list,
                 prefix = os.path.basename(save_file_path).rsplit('_', maxsplit=1)[0]
                 for path in file_paths:
                     if prefix in path:
-                        threading.Thread(
-                            target=converts_mp4, args=(path, state.delete_origin_file),
-                        ).start()
+                        spawn_transcode(converts_mp4, path, state.delete_origin_file)
             else:
-                threading.Thread(
-                    target=converts_mp4, args=(save_file_path, state.delete_origin_file),
-                ).start()
+                spawn_transcode(converts_mp4, save_file_path, state.delete_origin_file)
         print(f"\n{record_name} {stop_time} 直播录制完成\n")
 
         if script_command:

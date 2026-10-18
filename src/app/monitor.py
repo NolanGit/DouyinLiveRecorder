@@ -130,7 +130,7 @@ def display_info() -> None:
             else:
                 now_time = datetime.datetime.now()
                 print("-" * 60)
-                no_repeat_recording = list(set(state.recording))
+                no_repeat_recording = list(state.recording)
                 print(f"正在录制{len(no_repeat_recording)}个直播: ")
                 for recording_live in no_repeat_recording:
                     info = state.recording_time_list[recording_live]
@@ -155,8 +155,8 @@ def adjust_max_request() -> None:
 
     窗口外不需要进行调节（无 IO 错误产生），精确休眠到下次窗口开启。
     无录制且错误窗口为空时拉长检查间隔，避免空转 wakeup。
+    上限读 ``configured_max_request``，避免把启动时的瞬时值当成永久上限。
     """
-    preset = state.max_request
     while True:
         # 录制中或最近有错误时按 5 秒粒度；纯监控空闲期按 30 秒粒度
         idle = not state.recording and not state.error_window and state.error_count == 0
@@ -170,21 +170,26 @@ def adjust_max_request() -> None:
             continue
 
         with state.max_request_lock:
+            preset = state.configured_max_request or state.max_request
+            latest = state.error_count
             if state.error_window:
                 error_rate = sum(state.error_window) / len(state.error_window)
             else:
-                error_rate = 0
+                error_rate = latest
 
-            if error_rate > state.error_threshold:
+            # 本周期错误数或窗口均值超过阈值都降并发，避免要等窗口被填满才反应。
+            if latest > state.error_threshold or error_rate > state.error_threshold:
                 state.max_request = max(1, state.max_request - 1)
             elif error_rate < state.error_threshold / 2 and state.max_request < preset:
                 state.max_request += 1
 
             if state.pre_max_request != state.max_request:
                 state.pre_max_request = state.max_request
+                state.semaphore.set_limit(state.max_request)
                 print(f"\r同一时间访问网络的线程数动态改为 {state.max_request}")
 
-        state.error_window.append(state.error_count)
-        if len(state.error_window) > state.error_window_size:
-            state.error_window.pop(0)
-        state.error_count = 0
+            # 窗口里只保留每个周期的错误次数。录制线程只累加 error_count。
+            state.error_window.append(state.error_count)
+            if len(state.error_window) > state.error_window_size:
+                state.error_window.pop(0)
+            state.error_count = 0

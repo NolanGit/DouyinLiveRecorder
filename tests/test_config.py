@@ -86,6 +86,41 @@ class TestLoad:
         )
         config_mod.load()
         assert state.max_request == 5
+        assert state.configured_max_request == 5
+        assert state.semaphore.limit == 5
+
+    def test_reload_keeps_runtime_concurrency_when_file_unchanged(self, config_env):
+        from src.app import config as config_mod, state
+        config_env.write_text(
+            "[录制设置]\n同一时间访问网络的线程数 = 5\n",
+            encoding="utf-8-sig",
+        )
+        config_mod.load()
+        sem = state.semaphore
+        with state.max_request_lock:
+            state.max_request = 1
+            state.semaphore.set_limit(1)
+        config_mod.load()
+        assert state.max_request == 1
+        assert state.semaphore is sem
+        assert state.semaphore.limit == 1
+
+    def test_reload_applies_new_thread_count(self, config_env):
+        from src.app import config as config_mod, state
+        config_env.write_text(
+            "[录制设置]\n同一时间访问网络的线程数 = 5\n",
+            encoding="utf-8-sig",
+        )
+        config_mod.load()
+        text = config_env.read_text(encoding="utf-8-sig")
+        text = text.replace(
+            "同一时间访问网络的线程数 = 5",
+            "同一时间访问网络的线程数 = 8",
+        )
+        config_env.write_text(text, encoding="utf-8-sig")
+        config_mod.load()
+        assert state.max_request == 8
+        assert state.semaphore.limit == 8
 
     def test_load_proxy_platform_list_split(self, config_env):
         from src.app import config as config_mod, state

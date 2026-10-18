@@ -95,7 +95,6 @@ def _record_error(exc: Exception) -> None:
     logger.error(f"错误信息: {exc} 发生错误的行数: {exc.__traceback__.tb_lineno}")
     with state.max_request_lock:
         state.error_count += 1
-        state.error_window.append(1)
 
 
 def _resolve_anchor_name(stored_name: str, port_info: dict) -> str:
@@ -275,7 +274,6 @@ def start_record(url_data: tuple, count_variable: int = -1) -> None:
                         )
                         with state.max_request_lock:
                             state.error_count += 1
-                            state.error_window.append(1)
                     else:
                         anchor_name = clean_name(anchor_name)
                         record_name = f'序号{count_variable} {anchor_name}'
@@ -291,7 +289,7 @@ def start_record(url_data: tuple, count_variable: int = -1) -> None:
                                 f'{record_url}|{line_url},主播: {anchor_name.strip()}',
                             )
                             if new_record_url:
-                                state.not_record_list.append(new_record_url)
+                                state.not_record_list.add(new_record_url)
                             run_once = True
 
                         if port_info['is_live'] is False:
